@@ -1,4 +1,46 @@
 <?php
+require 'vendor/autoload.php';
+
+use MongoDB\Client;
+use MongoDB\Driver\ServerApi;
+
+session_start();
+
+$is_file_upload = $_SERVER['REQUEST_METHOD'] === 'POST';
+
+//check if the user is already authenticated
+if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+    $headers = getallheaders();
+    if (isset($headers['Token'])) {
+        $token = $headers['Token'];
+
+        //connect to the MongoDB database
+        $uri = 'mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority';
+        $apiVersion = new ServerApi(ServerApi::V1);
+        $client = new Client($uri, [], ['serverApi' => $apiVersion]);
+
+        $collection = $client->selectCollection('your_database_name', 'your_collection_name');
+
+        $user = $collection->findOne(['token' => $token]);
+
+        if ($user !== null) {
+            $_SESSION['authenticated'] = true;
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['token'] = $token;
+        } else {
+            header('WWW-Authenticate: Basic realm="Enter your username and password"');
+            header('HTTP/1.0 401 Unauthorized');
+            echo 'HTTP/1.0 401 Unauthorized';
+            exit;
+        }
+    } else {
+        header('WWW-Authenticate: Basic realm="Enter your username and password"');
+        header('HTTP/1.0 401 Unauthorized');
+        echo 'HTTP/1.0 401 Unauthorized';
+        exit;
+    }
+}
+
 class CONFIG
 {
     const MAX_FILESIZE = 512; //max. filesize in MiB
@@ -118,24 +160,16 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
         return;
     }
 
+    $original_name = pathinfo($name, PATHINFO_FILENAME);
     $ext = ext_by_path($name);
-    if (empty($ext) && CONFIG::AUTO_FILE_EXT)
-    {
-        $ext = ext_by_finfo($tmpfile);
-    }
-    $ext = substr($ext, 0, CONFIG::MAX_EXT_LEN);
-    $tries_per_len=3; //try random names a few times before upping the length
-    for ($len = CONFIG::ID_LENGTH; ; ++$len)
-    {
-        for ($n=0; $n<=$tries_per_len; ++$n)
-        {
-            $id = rnd_str($len);
-            $basename = $id . (empty($ext) ? '' : '.' . $ext);
-            $target_file = CONFIG::STORE_PATH . $basename;
+    $target_file = CONFIG::STORE_PATH . $name;
 
-            if (!file_exists($target_file))
-                break 2;
-        }
+    //if file with the same name exists, append a random string to the name
+    if (file_exists($target_file)) {
+        $basename = $original_name . '_' . rnd_str(5) . '.' . $ext;
+        $target_file = CONFIG::STORE_PATH . $basename;
+    } else {
+        $basename = $name;
     }
 
     $res = move_uploaded_file($tmpfile, $target_file);
@@ -248,6 +282,20 @@ function send_text_file(string $filename, string $content) : void
 // send a ShareX custom uploader config as .json
 function send_sharex_config() : void
 {
+    if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+        header('HTTP/1.0 401 Unauthorized');
+        echo 'HTTP/1.0 401 Unauthorized';
+        exit;
+    }
+
+    if (!isset($_SESSION['username']) || !isset($_SESSION['token'])) {
+        header('HTTP/1.0 400 Bad Request');
+        echo 'HTTP/1.0 400 Bad Request';
+        exit;
+    }
+
+    $token = $_SESSION['token'];
+
     $name = $_SERVER['SERVER_NAME'];
     $site_url = str_replace("?sharex", "", CONFIG::SITE_URL());
     send_text_file($name.'.sxcu', <<<EOT
@@ -257,7 +305,10 @@ function send_sharex_config() : void
   "RequestType": "POST",
   "RequestURL": "$site_url",
   "FileFormName": "file",
-  "ResponseType": "Text"
+  "ResponseType": "Text",
+  "Headers": {
+    "Token": "$token"
+  }
 }
 EOT);
 }
@@ -340,7 +391,8 @@ MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))^$decay
 
  === Source ===
 The PHP script used to provide this service is open source and available on 
-<a href="https://github.com/Rouji/single_php_filehost">GitHub</a>
+<a href="https://github.com/Z1xus/single_php_filehost">GitHub</a>
+(This is a fork of <a href="https://github.com/Rouji/single_php_filehost">the original single_php_filehost </a>)
 
 
  === Contact ===

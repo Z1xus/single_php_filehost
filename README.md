@@ -1,4 +1,9 @@
 # Single .php File Host
+
+> [!NOTE]  
+> This fork is intended to integrate [MongoDB](https://www.mongodb.com/) authorization into your filehost.  
+> (There are also a few minor changes like the file names aren't randomized, unless the file already exists)  
+
 Minimalistic file host in a single PHP script.
 
 `curl`-able like any proper file host and pastebin ought to be.  
@@ -7,6 +12,20 @@ i.e. you can upload a file via `curl -F "file=@/path/to/your/file.jpg" https://e
 Uploaded files get randomised names but keep their extensions. That means serving them is easily outsourced to the web server and is not handled by this script. 
 
 There's also a mechanism for removing files over a certain age, which can be invoked by calling the script with a command line argument.
+
+# MongoDB Setup
+You can install [MongoDB PHP Library](https://www.mongodb.com/docs/php-library/current/tutorial/install-php-library/) using Composer:
+```bash
+composer require mongodb/mongodb
+```
+Replace `mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority` with your actual MongoDB connection string:
+```php
+$uri = 'mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority';
+```
+Replace `your_database_name` and `your_collection_name` with your actual names:
+```php
+$collection = $client->selectCollection('your_database_name', 'your_collection_name');
+```
 
 # Config
 All configuration is done using the global variables at the top of **index.php**. Hopefully they're explained well enough in the short comments besides them.
