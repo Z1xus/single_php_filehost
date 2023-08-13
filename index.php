@@ -32,7 +32,7 @@ if (isset($_SERVER['HTTP_TOKEN'])) {
     }
 }
 
-function outputHTMLHeader() {
+function html_header() {
     echo <<<EOT
 <!DOCTYPE html>
 <html lang="en">
@@ -68,7 +68,7 @@ if (isset($usernameValue) && isset($passwordValue)) {
 }
 
 if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
-    outputHTMLHeader();
+    html_header();
     echo <<<EOT
     <style>
         body {
@@ -499,8 +499,7 @@ MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))^$decay
 
 
  === Source ===
-The PHP script used to provide this service is open source and available on 
-<a href="https://github.com/Z1xus/single_php_filehost">GitHub</a>
+The PHP script used to provide this service is open source and available on <a href="https://github.com/Z1xus/single_php_filehost">GitHub</a>
 (This is a fork of <a href="https://github.com/Rouji/single_php_filehost">the original single_php_filehost </a>)
 
 
@@ -511,6 +510,63 @@ please write an email to $mail
 </body>
 </html>
 EOT;
+}
+
+function admin_panel() {
+    if (isset($_SESSION['authenticated']) && $_SESSION['authenticated'] === true) {
+        $user = $GLOBALS['collection']->findOne(['username' => $_SESSION['username']]);
+        
+        if ($user !== null && $user['isAdmin'] === true) {
+            echo <<<EOT
+            <pre>
+             === Admin panel ===
+            You can create a new user here.
+            <form method="post" autocomplete="off">
+                <label for="new_username">Username</label>
+                <input type="text" id="new_username" name="new_username" autocomplete="off">
+                <label for="new_password">Password</label>
+                <input type="password" id="new_password" name="new_password" autocomplete="off">
+                <label for="isAdmin">Is Admin?</label>
+                <input type="checkbox" id="isAdmin" name="isAdmin">
+                <input type="submit" value="Create User">
+            </form>
+            </pre>
+            EOT;
+        }
+    }
+}
+
+function generateToken($length = 64) {
+    $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $charactersLength = strlen($characters);
+    $randomString = '';
+    for ($i = 0; $i < $length; $i++) {
+        $randomString .= $characters[rand(0, $charactersLength - 1)];
+    }
+    return $randomString;
+}
+
+$newUsernameValue = filter_input(INPUT_POST, 'new_username', FILTER_SANITIZE_STRING);
+$newPasswordValue = filter_input(INPUT_POST, 'new_password', FILTER_SANITIZE_STRING);
+$isAdminValue = filter_input(INPUT_POST, 'isAdmin', FILTER_VALIDATE_BOOLEAN);
+
+if (isset($newUsernameValue) && isset($newPasswordValue)) {
+    $newUsername = $newUsernameValue;
+    $newPassword = password_hash($newPasswordValue, PASSWORD_BCRYPT);
+    $isAdmin = isset($_POST['isAdmin']) ? filter_var($_POST['isAdmin'], FILTER_VALIDATE_BOOLEAN) : false;
+
+    if (!empty($newUsername) && !empty($newPassword)) {
+        $collection->insertOne([
+            'username' => $newUsername,
+            'password' => $newPassword,
+            'isAdmin' => $isAdmin,
+            'token' => generateToken(64),
+        ]);
+
+        $redirectURL = str_replace('index.php', '', $_SERVER['REQUEST_URI']);
+        header("Location: " . $redirectURL);
+        exit;
+    }
 }
 
 // decide what to do, based on POST parameters etc.
@@ -539,6 +595,7 @@ else if ($argv[1] ?? null === 'purge')
 else
 {
     check_config();
-    outputHTMLHeader();
+    html_header();
     print_index();
+    admin_panel();
 }
