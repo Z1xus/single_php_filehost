@@ -14,17 +14,20 @@ Uploaded files get randomised names but keep their extensions. That means servin
 There's also a mechanism for removing files over a certain age, which can be invoked by calling the script with a command line argument.
 
 # MongoDB Setup
-You can install [MongoDB PHP Library](https://www.mongodb.com/docs/php-library/current/tutorial/install-php-library/) using Composer:
+Install Composer:
 ```bash
-composer require mongodb/mongodb
+sudo apt install composer
 ```
-Replace `mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority` with your actual MongoDB connection string:
-```php
-$uri = 'mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority';
+Install dependencies:
+```bash
+cd single_php_filehost
+composer update
 ```
-Replace `your_database_name` and `your_collection_name` with your actual names:
-```php
-$collection = $client->selectCollection('your_database_name', 'your_collection_name');
+Configure your .env:
+```Shell
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
+DB_NAME=single_php_filehost
+COLLECTION_NAME=users
 ```
 
 # Config

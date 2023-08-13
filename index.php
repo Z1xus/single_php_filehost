@@ -4,45 +4,55 @@ require 'vendor/autoload.php';
 use MongoDB\Client;
 use MongoDB\Driver\ServerApi;
 
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
 session_start();
 
 $is_file_upload = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 //connect to the MongoDB database
-$uri = 'mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority';
+$uri = $_ENV['MONGODB_URI'];
 $apiVersion = new ServerApi(ServerApi::V1);
 $client = new Client($uri, [], ['serverApi' => $apiVersion]);
-$collection = $client->selectCollection('your_database_name', 'your_collection_name');
+$collection = $client->selectCollection($_ENV['DB_NAME'], $_ENV['COLLECTION_NAME']);
 
-//check if the user is already authenticated
-if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
-    $headers = getallheaders();
-    if (isset($headers['Token'])) {
-        $token = $headers['Token'];
+if (isset($_SERVER['HTTP_TOKEN'])) {
+    $token = filter_var($_SERVER['HTTP_TOKEN'], FILTER_SANITIZE_STRING);
+    $user = $collection->findOne(['token' => $token]);
 
-        $user = $collection->findOne(['token' => $token]);
-
-        if ($user !== null) {
-            $_SESSION['authenticated'] = true;
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['token'] = $token;
-        } else {
-            header('WWW-Authenticate: Basic realm="Enter your username and password"');
-            header('HTTP/1.0 401 Unauthorized');
-            echo 'HTTP/1.0 401 Unauthorized';
-            exit;
-        }
+    if ($user !== null) {
+        $_SESSION['authenticated'] = true;
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['token'] = $user['token'];
     } else {
-        if (!isset($_SERVER['PHP_AUTH_USER']) || !isset($_SERVER['PHP_AUTH_PW'])) {
-            header('WWW-Authenticate: Basic realm="Enter your username and password"');
-            header('HTTP/1.0 401 Unauthorized');
-            echo 'HTTP/1.0 401 Unauthorized';
-            exit;
-        }
+        header('HTTP/1.0 401 Unauthorized');
+        echo 'Invalid token';
+        exit;
+    }
+}
 
-        $username = $_SERVER['PHP_AUTH_USER'];
-        $password = $_SERVER['PHP_AUTH_PW'];
+function outputHTMLHeader() {
+    echo <<<EOT
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Filehost</title>
+    <meta name="description" content="Minimalistic service for sharing temporary files." />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+EOT;
+}
 
+$usernameValue = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_STRING);
+$passwordValue = filter_input(INPUT_POST, 'password', FILTER_SANITIZE_STRING);
+
+$errorMessage = '';
+if (isset($usernameValue) && isset($passwordValue)) {
+    $username = $usernameValue;
+    $password = $passwordValue;
+
+    if (!empty($username) && !empty($password)) {
         $user = $collection->findOne(['username' => $username]);
 
         if ($user !== null && password_verify($password, $user['password'])) {
@@ -50,12 +60,101 @@ if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
             $_SESSION['username'] = $user['username'];
             $_SESSION['token'] = $user['token'];
         } else {
-            header('WWW-Authenticate: Basic realm="Enter your username and password"');
-            header('HTTP/1.0 401 Unauthorized');
-            echo 'HTTP/1.0 401 Unauthorized';
-            exit;
+            $errorMessage = "Invalid credentials";
         }
+    } else {
+        $errorMessage = "The fields cannot be empty";
     }
+}
+
+if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+    echo <<<EOT
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #121212;
+            font-family: Arial, sans-serif;
+            color: #fff;
+        }
+        form {
+            background-color: #1e1e1e;
+            padding: 20px;
+            border-radius: 5px;
+            width: 90%;
+            max-width: 300px;
+            box-shadow: 0px 0px 10px 0px rgba(255,255,255,0.1);
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            color: #fff;
+            background-color: #1e1e1e;
+            box-sizing: border-box;
+        }
+        input[type="submit"] {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 0;
+            color: #fff;
+            background-color: #6200ee;
+            cursor: pointer;
+        }
+        input[type="submit"]:hover {
+            background-color: #3700b3;
+        }
+        .error {
+            color: #cf6679;
+            margin-bottom: 20px;
+        }
+        .eye-icon {
+            position: absolute;
+            margin-left: -30px;
+            margin-top: 12px;
+            color: #ccc;
+            cursor: pointer;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
+    <form method="post">
+        <div class="error">$errorMessage</div>
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" value="$usernameValue">
+        <label for="password">Password</label>
+        <div style="position: relative;">
+            <input type="password" id="password" name="password" value="$passwordValue">
+            <i id="togglePassword" class="fas fa-eye eye-icon" onclick="togglePasswordVisibility()"></i>
+        </div>
+        <input type="submit" value="Login">
+    </form>
+    <script>
+        function togglePasswordVisibility() {
+            var passwordField = document.getElementById('password');
+            var togglePasswordIcon = document.getElementById('togglePassword');
+            if (passwordField.type === "password") {
+                passwordField.type = "text";
+                togglePasswordIcon.classList.remove('fa-eye');
+                togglePasswordIcon.classList.add('fa-eye-slash');
+            } else {
+                passwordField.type = "password";
+                togglePasswordIcon.classList.remove('fa-eye-slash');
+                togglePasswordIcon.classList.add('fa-eye');
+            }
+        }
+    </script>
+    EOT;
+    exit;
 }
 
 class CONFIG
@@ -358,15 +457,7 @@ function print_index() : void
     $max_age = CONFIG::MAX_FILEAGE;
     $mail = CONFIG::ADMIN_EMAIL;
 
-
 echo <<<EOT
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>Filehost</title>
-    <meta name="description" content="Minimalistic service for sharing temporary files." />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-</head>
 <body>
 <pre>
  === How To Upload ===
@@ -421,7 +512,6 @@ please write an email to $mail
 EOT;
 }
 
-
 // decide what to do, based on POST parameters etc.
 if (isset($_FILES['file']['name']) &&
     isset($_FILES['file']['tmp_name']) &&
@@ -448,5 +538,6 @@ else if ($argv[1] ?? null === 'purge')
 else
 {
     check_config();
+    outputHTMLHeader();
     print_index();
 }
