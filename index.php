@@ -68,6 +68,7 @@ if (isset($usernameValue) && isset($passwordValue)) {
 }
 
 if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+    outputHTMLHeader();
     echo <<<EOT
     <style>
         body {
