@@ -8,18 +8,17 @@ session_start();
 
 $is_file_upload = $_SERVER['REQUEST_METHOD'] === 'POST';
 
+//connect to the MongoDB database
+$uri = 'mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority';
+$apiVersion = new ServerApi(ServerApi::V1);
+$client = new Client($uri, [], ['serverApi' => $apiVersion]);
+$collection = $client->selectCollection('your_database_name', 'your_collection_name');
+
 //check if the user is already authenticated
 if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
     $headers = getallheaders();
     if (isset($headers['Token'])) {
         $token = $headers['Token'];
-
-        //connect to the MongoDB database
-        $uri = 'mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority';
-        $apiVersion = new ServerApi(ServerApi::V1);
-        $client = new Client($uri, [], ['serverApi' => $apiVersion]);
-
-        $collection = $client->selectCollection('your_database_name', 'your_collection_name');
 
         $user = $collection->findOne(['token' => $token]);
 
@@ -34,10 +33,28 @@ if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
             exit;
         }
     } else {
-        header('WWW-Authenticate: Basic realm="Enter your username and password"');
-        header('HTTP/1.0 401 Unauthorized');
-        echo 'HTTP/1.0 401 Unauthorized';
-        exit;
+        if (!isset($_SERVER['PHP_AUTH_USER']) || !isset($_SERVER['PHP_AUTH_PW'])) {
+            header('WWW-Authenticate: Basic realm="Enter your username and password"');
+            header('HTTP/1.0 401 Unauthorized');
+            echo 'HTTP/1.0 401 Unauthorized';
+            exit;
+        }
+
+        $username = $_SERVER['PHP_AUTH_USER'];
+        $password = $_SERVER['PHP_AUTH_PW'];
+
+        $user = $collection->findOne(['username' => $username]);
+
+        if ($user !== null && password_verify($password, $user['password'])) {
+            $_SESSION['authenticated'] = true;
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['token'] = $user['token'];
+        } else {
+            header('WWW-Authenticate: Basic realm="Enter your username and password"');
+            header('HTTP/1.0 401 Unauthorized');
+            echo 'HTTP/1.0 401 Unauthorized';
+            exit;
+        }
     }
 }
 
