@@ -85,8 +85,10 @@ if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
             background-color: #1e1e1e;
             padding: 20px;
             border-radius: 5px;
-            width: 90%;
+            width: 70%;
             max-width: 300px;
+            margin-left: auto;
+            margin-right: auto;
             box-shadow: 0px 0px 10px 0px rgba(255,255,255,0.1);
         }
         label {
