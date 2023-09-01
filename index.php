@@ -37,9 +37,17 @@ function html_header() {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Filehost</title>
-    <meta name="description" content="Minimalistic service for sharing temporary files." />
+    <title>zentimine the filehost</title>
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Sherbert" />
+    <meta property="og:description" content="Best filehost <3\nRequest access @z1xus" />
+    <meta property="og:url" content="https://zentimine.xyz/" />
+    <meta property="og:image" content="https://zentimine.xyz/img/sherbert.jpg" />
+    <meta name="theme-color" content="#a39187" />
+    <meta name="twitter:card" content="summary_large_image">
 </head>
 EOT;
 }
@@ -162,9 +170,9 @@ if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
 
 class CONFIG
 {
-    const MAX_FILESIZE = 512; //max. filesize in MiB
-    const MAX_FILEAGE = 180; //max. age of files in days
-    const MIN_FILEAGE = 31; //min. age of files in days
+    const MAX_FILESIZE = 2048; //max. filesize in MiB
+    const MAX_FILEAGE = 31; //max. age of files in days
+    const MIN_FILEAGE = 7; //min. age of files in days
     const DECAY_EXP = 2; //high values penalise larger files more
 
     const UPLOAD_TIMEOUT = 5*60; //max. time an upload can take before it times out
@@ -176,7 +184,7 @@ class CONFIG
     const EXTERNAL_HOOK = null; //external program to call for each upload
     const AUTO_FILE_EXT = false; //automatically try to detect file extension for files that have none
 
-    const ADMIN_EMAIL = 'admin@example.com';  //address for inquiries
+    const ADMIN_EMAIL = 'z1xuss@proton.me';  //address for inquiries
 
     public static function SITE_URL() : string
     {
@@ -460,82 +468,142 @@ function print_index() : void
     $max_age = CONFIG::MAX_FILEAGE;
     $mail = CONFIG::ADMIN_EMAIL;
 
-echo <<<EOT
-<body>
-<pre>
- === How To Upload ===
-You can upload files to this site via a simple HTTP POST, e.g. using curl:
-curl -F "file=@/path/to/your/file.jpg" $site_url
-
-Or if you want to pipe to curl *and* have a file extension, add a "filename":
-echo "hello" | curl -F "file=@-;filename=.txt" $site_url
-
-On Windows, you can use <a href="https://getsharex.com/">ShareX</a> and import <a href="$sharex_url">this</a> custom uploader.
-On Android, you can use an app called <a href="https://github.com/Rouji/Hupl">Hupl</a> with <a href="$hupl_url">this</a> uploader.
-
-
-Or simply choose a file and click "Upload" below:
-(Hint: If you're lucky, your browser may support drag-and-drop onto the file 
-selection input.)
-</pre>
-<form id="frm" method="post" enctype="multipart/form-data">
-<input type="file" name="file" id="file" />
-<input type="hidden" name="formatted" value="true" />
-<input type="submit" value="Upload"/>
-</form>
-<pre>
-
-
- === File Sizes etc. ===
-The maximum allowed file size is $max_size MiB.
-
-Files are kept for a minimum of $min_age, and a maximum of $max_age Days.
-
-How long a file is kept depends on its size. Larger files are deleted earlier 
-than small ones. This relation is non-linear and skewed in favour of small 
-files.
-
-The exact formula for determining the maximum age for a file is:
-
-MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))^$decay
-
-
- === Source ===
-The PHP script used to provide this service is open source and available on <a href="https://github.com/Z1xus/single_php_filehost">GitHub</a>
-(This is a fork of <a href="https://github.com/Rouji/single_php_filehost">the original single_php_filehost </a>)
-
-
- === Contact ===
-If you want to report abuse of this service, or have any other inquiries, 
-please write an email to $mail
-</pre>
-</body>
-</html>
-EOT;
-}
-
-function admin_panel() {
+    $adminPanel = '';
     if (isset($_SESSION['authenticated']) && $_SESSION['authenticated'] === true) {
         $user = $GLOBALS['collection']->findOne(['username' => $_SESSION['username']]);
         
         if ($user !== null && $user['isAdmin'] === true) {
-            echo <<<EOT
-            <pre>
-             === Admin panel ===
-            You can create a new user here.
-            <form method="post" autocomplete="off">
-                <label for="new_username">Username</label>
-                <input type="text" id="new_username" name="new_username" autocomplete="off">
-                <label for="new_password">Password</label>
-                <input type="password" id="new_password" name="new_password" autocomplete="off">
-                <label for="isAdmin">Is Admin?</label>
-                <input type="checkbox" id="isAdmin" name="isAdmin">
-                <input type="submit" value="Create User">
-            </form>
-            </pre>
+            $adminPanel = <<<EOT
+            <div class="container admin-panel">
+                <h2>Admin Panel</h2>
+                <form method="post" autocomplete="off">
+                    <label for="new_username">Username</label>
+                    <input type="text" id="new_username" name="new_username" autocomplete="off">
+                    <label for="new_password">Password</label>
+                    <input type="password" id="new_password" name="new_password" autocomplete="off">
+                    <label for="isAdmin">Is Admin?</label>
+                    <input type="checkbox" id="isAdmin" name="isAdmin">
+                    <input type="submit" value="Create User">
+                </form>
+            </div>
             EOT;
         }
     }
+
+    echo <<<EOT
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <title>Zentimine.xyz</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300&display=swap" rel="stylesheet">
+        <style>
+            body {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background-color: #121212;
+                font-family: Arial, sans-serif;
+                color: #fff;
+            }
+            .container {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                background-color: #1e1e1e;
+                padding: 20px;
+                border-radius: 5px;
+                box-shadow: 0px 0px 10px 0px rgba(255,255,255,0.1);
+            }
+            h1 {
+                margin-bottom: 20px;
+                user-select: none;
+            }
+            form {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+                max-width: 300px;
+                margin-bottom: 20px;
+            }
+            input[type="file"], input[type="submit"] {
+                width: 100%;
+                padding: 10px;
+                margin-bottom: 20px;
+                border-radius: 5px;
+                border: 1px solid #6200ee;
+                color: #fff;
+                background-color: #1e1e1e;
+                box-sizing: border-box;
+                cursor: pointer;
+            }
+            input[type="submit"] {
+                background-color: #6200ee;
+                margin-bottom: -4px;
+                width: 100%;
+                padding: 10px;
+                border-radius: 5px;
+                border: 0;
+                color: #fff;
+                background-color: #6200ee;
+                cursor: pointer;
+            }
+            input[type="submit"]:hover {
+                background-color: #3700b3;
+            }
+            .guide {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            .links {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+            }
+            .links a {
+                color: #fff;
+                text-decoration: none;
+            }
+            .links a:hover {
+                text-decoration: underline;
+            }
+            .admin-panel {
+                margin-top: 40px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrapper">
+            <div class="container">
+                <h1 style="color: #a500d0; font-family: 'Roboto Mono', sans-serif;">zentimine.xyz</h1>
+                <form method="post" enctype="multipart/form-data">
+                    <input type="file" name="file" id="file" />
+                    <input type="hidden" name="formatted" value="true" />
+                    <input type="submit" value="Upload"/>
+                </form>
+                <div class="guide">
+                    <p>j select file and upload :p</p>
+                    <p>max filesize: <span style="color:#b88cf7">$max_size mib</span></p>
+                    <p>files are kept for a maximum of <span style="color:#b88cf7">$max_age days</span></>
+                </div>
+                <div class="links">
+                    <a style="color: #9959f4;" href="$sharex_url">sharex config</a><span style="color:#b88cf7"> •</span>
+                    <a style="color: #9959f4;" href="https://github.com/Z1xus/single_php_filehost">source</a><span style="color:#b88cf7"> •</span>
+                    <a style="color: #9959f4;" href="https://z1xus.netlify.app/">contact</a>
+                </div>
+            </div>
+            <div class="admin-panel">
+                $adminPanel
+            </div>
+        </div>
+    </body>
+    </html>
+    EOT;
 }
 
 function generateToken($length = 64) {
@@ -599,5 +667,4 @@ else
     check_config();
     html_header();
     print_index();
-    admin_panel();
 }
