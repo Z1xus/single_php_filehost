@@ -468,6 +468,8 @@ EOT);
 // use it, how to upload, etc.
 function print_index() : void
 {
+    html_header();
+
     $site_url = CONFIG::SITE_URL();
     $sharex_url = $site_url.'?sharex';
     $hupl_url = $site_url.'?hupl';
