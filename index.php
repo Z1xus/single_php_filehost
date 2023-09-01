@@ -11,25 +11,22 @@ session_start();
 
 $is_file_upload = $_SERVER['REQUEST_METHOD'] === 'POST';
 
-//connect to the MongoDB database
 $uri = $_ENV['MONGODB_URI'];
 $apiVersion = new ServerApi(ServerApi::V1);
 $client = new Client($uri, [], ['serverApi' => $apiVersion]);
 $collection = $client->selectCollection($_ENV['DB_NAME'], $_ENV['COLLECTION_NAME']);
 
 if (isset($_SERVER['HTTP_TOKEN'])) {
-    $token = filter_var($_SERVER['HTTP_TOKEN'], FILTER_SANITIZE_STRING);
-    $user = $collection->findOne(['token' => $token]);
+    validateToken($collection);
+}
 
-    if ($user !== null) {
-        $_SESSION['authenticated'] = true;
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['token'] = $user['token'];
-    } else {
-        header('HTTP/1.0 401 Unauthorized');
-        echo 'Invalid token';
-        exit;
-    }
+$usernameValue = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_STRING);
+$passwordValue = filter_input(INPUT_POST, 'password', FILTER_SANITIZE_STRING);
+
+$errorMessage = validateCredentials($usernameValue, $passwordValue, $collection);
+
+if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+    serveLoginPage($errorMessage, $usernameValue, $passwordValue);
 }
 
 function html_header() {
@@ -52,30 +49,68 @@ function html_header() {
 EOT;
 }
 
-$usernameValue = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_STRING);
-$passwordValue = filter_input(INPUT_POST, 'password', FILTER_SANITIZE_STRING);
+class CONFIG
+{
+    const MAX_FILESIZE = 2048; //max. filesize in MiB
+    const MAX_FILEAGE = 31; //max. age of files in days
+    const MIN_FILEAGE = 7; //min. age of files in days
+    const DECAY_EXP = 2; //high values penalise larger files more
 
-$errorMessage = '';
-if (isset($usernameValue) && isset($passwordValue)) {
-    $username = $usernameValue;
-    $password = $passwordValue;
+    const UPLOAD_TIMEOUT = 5*60; //max. time an upload can take before it times out
+    const ID_LENGTH = 3; //length of the random file ID
+    const STORE_PATH = 'files/'; //directory to store uploaded files in
+    const LOG_PATH = null; //path to log uploads + resulting links to
+    const DOWNLOAD_PATH = '%s'; //the path part of the download url. %s = placeholder for filename
+    const MAX_EXT_LEN = 7; //max. length for file extensions
+    const EXTERNAL_HOOK = null; //external program to call for each upload
+    const AUTO_FILE_EXT = false; //automatically try to detect file extension for files that have none
 
-    if (!empty($username) && !empty($password)) {
-        $user = $collection->findOne(['username' => $username]);
+    const ADMIN_EMAIL = 'z1xuss@proton.me';  //address for inquiries
 
-        if ($user !== null && password_verify($password, $user['password'])) {
-            $_SESSION['authenticated'] = true;
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['token'] = $user['token'];
-        } else {
-            $errorMessage = "Invalid credentials";
-        }
+    public static function SITE_URL() : string
+    {
+        $proto = ($_SERVER['HTTPS'] ?? 'off') == 'on' ? 'https' : 'http';
+        return "$proto://{$_SERVER['HTTP_HOST']}{$_SERVER['REQUEST_URI']}";
+    }
+};
+
+function validateToken($collection) {
+    $token = filter_var($_SERVER['HTTP_TOKEN'], FILTER_SANITIZE_STRING);
+    $user = $collection->findOne(['token' => $token]);
+
+    if ($user !== null) {
+        $_SESSION['authenticated'] = true;
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['token'] = $user['token'];
     } else {
-        $errorMessage = "The fields cannot be empty";
+        header('HTTP/1.0 401 Unauthorized');
+        echo 'Invalid token';
+        exit;
     }
 }
 
-if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+function validateCredentials($usernameValue, $passwordValue, $collection) {
+    if (isset($usernameValue) && isset($passwordValue)) {
+        $username = $usernameValue;
+        $password = $passwordValue;
+
+        if (!empty($username) && !empty($password)) {
+            $user = $collection->findOne(['username' => $username]);
+
+            if ($user !== null && password_verify($password, $user['password'])) {
+                $_SESSION['authenticated'] = true;
+                $_SESSION['username'] = $user['username'];
+                $_SESSION['token'] = $user['token'];
+            } else {
+                return "Invalid credentials";
+            }
+        } else {
+            return "The fields cannot be empty";
+        }
+    }
+}
+
+function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     html_header();
     echo <<<EOT
     <style>
@@ -167,32 +202,6 @@ if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
     EOT;
     exit;
 }
-
-class CONFIG
-{
-    const MAX_FILESIZE = 2048; //max. filesize in MiB
-    const MAX_FILEAGE = 31; //max. age of files in days
-    const MIN_FILEAGE = 7; //min. age of files in days
-    const DECAY_EXP = 2; //high values penalise larger files more
-
-    const UPLOAD_TIMEOUT = 5*60; //max. time an upload can take before it times out
-    const ID_LENGTH = 3; //length of the random file ID
-    const STORE_PATH = 'files/'; //directory to store uploaded files in
-    const LOG_PATH = null; //path to log uploads + resulting links to
-    const DOWNLOAD_PATH = '%s'; //the path part of the download url. %s = placeholder for filename
-    const MAX_EXT_LEN = 7; //max. length for file extensions
-    const EXTERNAL_HOOK = null; //external program to call for each upload
-    const AUTO_FILE_EXT = false; //automatically try to detect file extension for files that have none
-
-    const ADMIN_EMAIL = 'z1xuss@proton.me';  //address for inquiries
-
-    public static function SITE_URL() : string
-    {
-        $proto = ($_SERVER['HTTPS'] ?? 'off') == 'on' ? 'https' : 'http';
-        return "$proto://{$_SERVER['HTTP_HOST']}{$_SERVER['REQUEST_URI']}";
-    }
-};
-
 
 // generate a random string of characters with given length
 function rnd_str(int $len) : string
@@ -665,6 +674,5 @@ else if ($argv[1] ?? null === 'purge')
 else
 {
     check_config();
-    html_header();
     print_index();
 }
