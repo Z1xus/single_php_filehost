@@ -23,7 +23,13 @@ if (isset($_SERVER['HTTP_TOKEN'])) {
 $usernameValue = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_STRING);
 $passwordValue = filter_input(INPUT_POST, 'password', FILTER_SANITIZE_STRING);
 
-$errorMessage = validateCredentials($usernameValue, $passwordValue, $collection);
+$inviteCodeValue = filter_input(INPUT_POST, 'invite_code', FILTER_SANITIZE_STRING);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($inviteCodeValue)) {
+    $errorMessage = userRegister($usernameValue, $passwordValue, $inviteCodeValue, $collection);
+} else {
+    $errorMessage = validateCredentials($usernameValue, $passwordValue, $collection);
+}
 
 if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
     serveLoginPage($errorMessage, $usernameValue, $passwordValue);
@@ -36,7 +42,7 @@ function html_header() {
 <head>
     <title>zentimine the filehost</title>
     <link rel="icon" type="image/x-icon" href="img/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Sherbert" />
@@ -110,15 +116,65 @@ function validateCredentials($usernameValue, $passwordValue, $collection) {
     }
 }
 
+function userRegister($usernameValue, $passwordValue, $inviteCodeValue, $collection) {
+    if (isset($usernameValue) && isset($passwordValue) && isset($inviteCodeValue)) {
+        $username = $usernameValue;
+        $password = $passwordValue;
+        $inviteCode = $inviteCodeValue;
+
+        if (!empty($username) && !empty($password) && !empty($inviteCode)) {
+            $inviteCodeEntry = $collection->findOne(['inviteCode' => $inviteCode]);
+
+            if ($inviteCodeEntry !== null && $inviteCodeEntry['isValid'] === true) {
+                $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+                $token = generateToken(64);
+
+                $collection->insertOne([
+                    'username' => $username,
+                    'password' => $hashedPassword,
+                    'isAdmin' => false,
+                    'token' => $token,
+                ]);
+
+                $collection->updateOne(
+                    ['inviteCode' => $inviteCode],
+                    ['$set' => ['isValid' => false]]
+                );
+
+                $_SESSION['authenticated'] = true;
+                $_SESSION['username'] = $username;
+                $_SESSION['token'] = $token;
+            } else {
+                return "Invalid invite code";
+            }
+        } else {
+            return "All fields must be filled";
+        }
+    }
+}
+
+function userCreate($usernameValue, $passwordValue, $isAdmin, $collection) {
+    $hashedPassword = password_hash($passwordValue, PASSWORD_DEFAULT);
+    $token = generateToken(64);
+
+    $collection->insertOne([
+        'username' => $usernameValue,
+        'password' => $hashedPassword,
+        'isAdmin' => $isAdmin,
+        'token' => $token,
+    ]);
+}
+
 function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     html_header();
+    $headerText = "Login";
     echo <<<EOT
     <style>
         body {
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100svh;
             margin: 0;
             background-color: #121212;
             font-family: Arial, sans-serif;
@@ -126,7 +182,7 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
         }
         form {
             background-color: #1e1e1e;
-            padding: 20px;
+            padding: 1em;
             border-radius: 5px;
             width: 70%;
             max-width: 300px;
@@ -141,9 +197,9 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
         input[type="text"], input[type="password"] {
             width: 100%;
             padding: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 1em;
             border-radius: 5px;
-            border: 1px solid #ccc;
+            border: 1px solid #6200ee;
             color: #fff;
             background-color: #1e1e1e;
             box-sizing: border-box;
@@ -162,7 +218,7 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
         }
         .error {
             color: #cf6679;
-            margin-bottom: 20px;
+            margin-bottom: 1em;
         }
         .eye-icon {
             position: absolute;
@@ -174,15 +230,17 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
     <form method="post">
-        <div class="error">$errorMessage</div>
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" value="$usernameValue">
-        <label for="password">Password</label>
+        <h2 id="formHeader" style="text-align: center; color: #fff; margin-bottom: 1em;">$headerText</h2>
+        <input type="text" id="username" name="username" value="$usernameValue" placeholder="Username" style="margin-bottom: 1em;">
         <div style="position: relative;">
-            <input type="password" id="password" name="password" value="$passwordValue">
-            <i id="togglePassword" class="fas fa-eye eye-icon" onclick="togglePasswordVisibility()"></i>
+            <div>
+                <input type="password" id="password" name="password" value="$passwordValue" placeholder="Password" style="margin-bottom: 1em;">
+                <i id="togglePassword" class="fas fa-eye eye-icon" onclick="togglePasswordVisibility()"></i>
+            </div>
         </div>
+        <div class="error">$errorMessage</div>
         <input type="submit" value="Login">
+        <a href="#" id="toggleForm" onclick="toggleForms()" style="display: block; text-align: right; margin-top: 10px; color: #9959f4; text-decoration: none;">Register</a>
     </form>
     <script>
         function togglePasswordVisibility() {
@@ -197,6 +255,27 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
                 togglePasswordIcon.classList.remove('fa-eye-slash');
                 togglePasswordIcon.classList.add('fa-eye');
             }
+        }
+        let isLoginForm = true;
+        let inviteCodeFieldHTML = '<div id="inviteCodeContainer" style="position: relative;"><input type="text" id="invite_code" name="invite_code" placeholder="Invite Code" style="margin-bottom: 1em;"></div>';
+
+        function toggleForms() {
+            const form = document.querySelector('form');
+            const toggleFormLink = document.getElementById('toggleForm');
+            const passwordField = form.querySelector('#password').parentElement;
+            const formHeader = document.getElementById('formHeader');
+            if (isLoginForm) {
+                passwordField.insertAdjacentHTML('afterend', inviteCodeFieldHTML);
+                toggleFormLink.textContent = 'Login';
+                formHeader.textContent = 'Register';
+                form.querySelector('input[type="submit"]').value = 'Register';
+            } else {
+                form.querySelector('#inviteCodeContainer').remove();
+                toggleFormLink.textContent = 'Register';
+                formHeader.textContent = 'Login';
+                form.querySelector('input[type="submit"]').value = 'Login';
+            }
+            isLoginForm = !isLoginForm;
         }
     </script>
     EOT;
@@ -479,15 +558,17 @@ function print_index() : void
         if ($user !== null && $user['isAdmin'] === true) {
             $adminPanel = <<<EOT
             <div class="container admin-panel">
-                <h2>Admin Panel</h2>
+                <h2 style="margin-bottom: 1em; user-select: none;">Admin Panel</h2>
                 <form method="post" autocomplete="off">
-                    <label for="new_username">Username</label>
-                    <input type="text" id="new_username" name="new_username" autocomplete="off">
-                    <label for="new_password">Password</label>
-                    <input type="password" id="new_password" name="new_password" autocomplete="off">
-                    <label for="isAdmin">Is Admin?</label>
-                    <input type="checkbox" id="isAdmin" name="isAdmin">
-                    <input type="submit" value="Create User">
+                    <input class="styled-input" type="text" id="new_username" name="new_username" placeholder="Username" autocomplete="off">
+                    <input class="styled-input" type="password" id="new_password" name="new_password" placeholder="Password" autocomplete="off">
+                    <p style="padding-bottom: 0.2em;">
+                      <label>
+                        <input type="checkbox" id="isAdmin" name="isAdmin" />
+                        <span>Administrator</span>
+                      </label>
+                    </p>
+                    <input class="styled-input styled-submit" type="submit" value="Create User">
                 </form>
             </div>
             EOT;
@@ -500,32 +581,44 @@ function print_index() : void
     <head>
         <title>Zentimine.xyz</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300&display=swap" rel="stylesheet">
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300&display=swap" rel="stylesheet" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        
         <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
             body {
                 display: flex;
+                flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                height: 100vh;
+                min-height: 100vh;
                 margin: 0;
                 background-color: #121212;
                 font-family: Arial, sans-serif;
                 color: #fff;
+            }
+            .wrapper {
+                padding: 1.2em;
+                margin: 1em; /* Add margin */
+                box-sizing: border-box;
             }
             .container {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 background-color: #1e1e1e;
-                padding: 20px;
+                padding: 1.3em;
                 border-radius: 5px;
                 box-shadow: 0px 0px 10px 0px rgba(255,255,255,0.1);
-            }
-            h1 {
-                margin-bottom: 20px;
-                user-select: none;
+                width: 100%;
+                max-width: 600px;
+                box-sizing: border-box;
             }
             form {
                 display: flex;
@@ -533,12 +626,12 @@ function print_index() : void
                 align-items: center;
                 width: 100%;
                 max-width: 300px;
-                margin-bottom: 20px;
+                margin-bottom: 2em;
             }
             input[type="file"], input[type="submit"] {
                 width: 100%;
                 padding: 10px;
-                margin-bottom: 20px;
+                margin-bottom: 2em;
                 border-radius: 5px;
                 border: 1px solid #6200ee;
                 color: #fff;
@@ -562,7 +655,10 @@ function print_index() : void
             }
             .guide {
                 text-align: center;
-                margin-bottom: 20px;
+                margin-bottom: 1em;
+            }
+            .guide p {
+                margin-bottom: 0.5em
             }
             .links {
                 display: flex;
@@ -577,14 +673,75 @@ function print_index() : void
                 text-decoration: underline;
             }
             .admin-panel {
-                margin-top: 40px;
+                margin-top: 2em;
+                padding-bottom: 1em;
+                position: relative;
+            }
+            .styled-input {
+                width: 100%;
+                padding: 10px;
+                margin-bottom: 1em;
+                border-radius: 5px;
+                border: 1px solid #6200ee;
+                color: #fff;
+                background-color: #1e1e1e;
+                box-sizing: border-box;
+            }
+            .styled-submit {
+                background-color: #6200ee;
+                cursor: pointer;
+                margin-top: 1em;
+            }
+            .styled-submit:hover {
+                background-color: #3700b3;
+            }
+            input[type="checkbox"] {
+                position: absolute;
+                opacity: 0;
+            }
+            input[type="checkbox"] + span {
+                position: relative;
+                padding-left: 35px;
+                cursor: pointer;
+                display: inline-block;
+            }
+            input[type="checkbox"] + span:before {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: -3px;
+                width: 20px;
+                height: 20px;
+                border: 2px solid #6200ee;
+                border-radius: 3px;
+                background-color: transparent;
+                transition: all 0.3s ease-in-out;
+            }
+            input[type="checkbox"] + span:after {
+                content: '';
+                position: absolute;
+                top: 1px;
+                left: 8px;
+                width: 5px;
+                height: 10px;
+                border: solid white;
+                border-width: 0 3px 3px 0;
+                transform: rotate(45deg);
+                opacity: 0;
+                transition: all 0.3s ease-in-out;
+            }
+            input[type="checkbox"]:checked + span:before {
+                background-color: #6200ee;
+            }
+            input[type="checkbox"]:checked + span:after {
+                opacity: 1;
             }
         </style>
     </head>
     <body>
         <div class="wrapper">
             <div class="container">
-                <h1 style="color: #a500d0; font-family: 'Roboto Mono', sans-serif;">zentimine.xyz</h1>
+                <h1 style="color: #a500d0; font-family: 'Roboto Mono', sans-serif; margin-bottom: 1em; user-select: none;">zentimine.xyz</h1>
                 <form method="post" enctype="multipart/form-data">
                     <input type="file" name="file" id="file" />
                     <input type="hidden" name="formatted" value="true" />
@@ -626,16 +783,11 @@ $isAdminValue = filter_input(INPUT_POST, 'isAdmin', FILTER_VALIDATE_BOOLEAN);
 
 if (isset($newUsernameValue) && isset($newPasswordValue)) {
     $newUsername = $newUsernameValue;
-    $newPassword = password_hash($newPasswordValue, PASSWORD_BCRYPT);
+    $newPassword = $newPasswordValue;
     $isAdmin = isset($_POST['isAdmin']) ? filter_var($_POST['isAdmin'], FILTER_VALIDATE_BOOLEAN) : false;
 
     if (!empty($newUsername) && !empty($newPassword)) {
-        $collection->insertOne([
-            'username' => $newUsername,
-            'password' => $newPassword,
-            'isAdmin' => $isAdmin,
-            'token' => generateToken(64),
-        ]);
+        userCreate($newUsername, $newPassword, $isAdmin, $collection);
 
         $redirectURL = str_replace('index.php', '', $_SERVER['REQUEST_URI']);
         header("Location: " . $redirectURL);
