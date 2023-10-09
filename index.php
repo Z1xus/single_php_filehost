@@ -289,17 +289,10 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
         return;
     }
 
-    $original_name = pathinfo($name, PATHINFO_FILENAME);
     $ext = ext_by_path($name);
-    $target_file = CONFIG::STORE_PATH . $name;
-
-    //if file with the same name exists, append a random string to the name
-    if (file_exists($target_file)) {
-        $basename = $original_name . '_' . rnd_str(5) . '.' . $ext;
-        $target_file = CONFIG::STORE_PATH . $basename;
-    } else {
-        $basename = $name;
-    }
+    $randomPrefix = rnd_str(5);
+    $basename = $randomPrefix.'_'.$name;
+    $target_file = CONFIG::STORE_PATH . $basename;
 
     $res = move_uploaded_file($tmpfile, $target_file);
     if (!$res)
