@@ -416,7 +416,7 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
 
     if ($formatted)
     {
-        print("<pre>Access your file here: <a href=\"$url\">$url</a></pre>");
+        print("<pre>link to your file :>\n<a href=\"$url\">$url</a></pre>");
     }
     else
     {
