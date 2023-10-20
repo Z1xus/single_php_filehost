@@ -260,6 +260,12 @@ function ext_by_finfo(string $path) : string
     return '';
 }
 
+function sanitize_filename($name){
+    $sanitized = preg_replace('/[^a-zA-Z0-9_\.]/','', $name);
+    $sanitized = str_replace(" ", "_", $sanitized);
+    return $sanitized;
+}
+
 // store an uploaded file, given its name and temporary path (e.g. values straight out of $_FILES)
 // files are stored wit a randomised name, but with their original extension
 //
@@ -289,9 +295,9 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
         return;
     }
 
+    $original_name = pathinfo($name, PATHINFO_FILENAME);
     $ext = ext_by_path($name);
-    $randomPrefix = rnd_str(5);
-    $basename = $randomPrefix.'_'.$name;
+    $basename = sanitize_filename($original_name . '_' . rnd_str(5) . '.' . $ext);
     $target_file = CONFIG::STORE_PATH . $basename;
 
     $res = move_uploaded_file($tmpfile, $target_file);
@@ -328,7 +334,7 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
     }
     else
     {
-        print("$url\n");
+        print("$url");
     }
 
     // log uploader's IP, original filename, etc.
