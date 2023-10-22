@@ -15,6 +15,7 @@ $uri = $_ENV['MONGODB_URI'];
 $apiVersion = new ServerApi(ServerApi::V1);
 $client = new Client($uri, [], ['serverApi' => $apiVersion]);
 $collection = $client->selectCollection($_ENV['DB_NAME'], $_ENV['COLLECTION_NAME']);
+$invitesCollection = $client->selectCollection($_ENV['DB_NAME'], 'invites');
 
 if (isset($_SERVER['HTTP_TOKEN'])) {
     validateToken($collection);
@@ -26,7 +27,7 @@ $passwordValue = filter_input(INPUT_POST, 'password', FILTER_SANITIZE_STRING);
 $inviteCodeValue = filter_input(INPUT_POST, 'invite_code', FILTER_SANITIZE_STRING);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($inviteCodeValue)) {
-    $errorMessage = userRegister($usernameValue, $passwordValue, $inviteCodeValue, $collection);
+    $errorMessage = userRegister($usernameValue, $passwordValue, $inviteCodeValue, $invitesCollection, $collection);
 } else {
     $errorMessage = validateCredentials($usernameValue, $passwordValue, $collection);
 }
@@ -65,7 +66,7 @@ class CONFIG
     const UPLOAD_TIMEOUT = 5*60; //max. time an upload can take before it times out
     const ID_LENGTH = 3; //length of the random file ID
     const STORE_PATH = 'files/'; //directory to store uploaded files in
-    const LOG_PATH = null; //path to log uploads + resulting links to
+    const LOG_PATH = 'uploads.log'; //path to log uploads + resulting links to
     const DOWNLOAD_PATH = '%s'; //the path part of the download url. %s = placeholder for filename
     const MAX_EXT_LEN = 7; //max. length for file extensions
     const EXTERNAL_HOOK = null; //external program to call for each upload
@@ -116,14 +117,35 @@ function validateCredentials($usernameValue, $passwordValue, $collection) {
     }
 }
 
-function userRegister($usernameValue, $passwordValue, $inviteCodeValue, $collection) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request']) && $_POST['request'] === 'generateInviteCode') {
+    if (isset($_SESSION['username'])) {
+        $username = $_SESSION['username'];
+        $inviteCode = generateInviteCode($username, $invitesCollection);
+        echo $inviteCode;
+        exit;
+    }
+}
+
+function generateInviteCode($username, $invitesCollection) {
+    $inviteCode = generateToken(10);
+
+    $invitesCollection->insertOne([
+        'code' => $inviteCode,
+        'isValid' => true,
+        'generatedBy' => $username
+    ]);
+
+    return $inviteCode;
+}
+
+function userRegister($usernameValue, $passwordValue, $inviteCodeValue, $invitesCollection, $collection) {
     if (isset($usernameValue) && isset($passwordValue) && isset($inviteCodeValue)) {
         $username = $usernameValue;
         $password = $passwordValue;
         $inviteCode = $inviteCodeValue;
 
         if (!empty($username) && !empty($password) && !empty($inviteCode)) {
-            $inviteCodeEntry = $collection->findOne(['inviteCode' => $inviteCode]);
+            $inviteCodeEntry = $invitesCollection->findOne(['code' => $inviteCode]);
 
             if ($inviteCodeEntry !== null && $inviteCodeEntry['isValid'] === true) {
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
@@ -134,10 +156,11 @@ function userRegister($usernameValue, $passwordValue, $inviteCodeValue, $collect
                     'password' => $hashedPassword,
                     'isAdmin' => false,
                     'token' => $token,
+                    'usedInviteCode' => $inviteCode
                 ]);
 
-                $collection->updateOne(
-                    ['inviteCode' => $inviteCode],
+                $invitesCollection->updateOne(
+                    ['code' => $inviteCode],
                     ['$set' => ['isValid' => false]]
                 );
 
@@ -167,7 +190,7 @@ function userCreate($usernameValue, $passwordValue, $isAdmin, $collection) {
 
 function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     html_header();
-    $headerText = "Login";
+    $headerText = "login";
     echo <<<EOT
     <style>
         body {
@@ -231,16 +254,16 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
     <form method="post">
         <h2 id="formHeader" style="text-align: center; color: #fff; margin-bottom: 1em;">$headerText</h2>
-        <input type="text" id="username" name="username" value="$usernameValue" placeholder="Username" style="margin-bottom: 1em;">
+        <input type="text" id="username" name="username" value="$usernameValue" placeholder="username" style="margin-bottom: 1em;">
         <div style="position: relative;">
             <div>
-                <input type="password" id="password" name="password" value="$passwordValue" placeholder="Password" style="margin-bottom: 1em;">
+                <input type="password" id="password" name="password" value="$passwordValue" placeholder="password" style="margin-bottom: 1em;">
                 <i id="togglePassword" class="fas fa-eye eye-icon" onclick="togglePasswordVisibility()"></i>
             </div>
         </div>
         <div class="error">$errorMessage</div>
-        <input type="submit" value="Login">
-        <a href="#" id="toggleForm" onclick="toggleForms()" style="display: block; text-align: right; margin-top: 10px; color: #9959f4; text-decoration: none;">Register</a>
+        <input type="submit" value="login">
+        <a href="#" id="toggleForm" onclick="toggleForms()" style="display: block; text-align: right; margin-top: 10px; color: #9959f4; text-decoration: none;">register</a>
     </form>
     <script>
         function togglePasswordVisibility() {
@@ -257,7 +280,7 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
             }
         }
         let isLoginForm = true;
-        let inviteCodeFieldHTML = '<div id="inviteCodeContainer" style="position: relative;"><input type="text" id="invite_code" name="invite_code" placeholder="Invite Code" style="margin-bottom: 1em;"></div>';
+        let inviteCodeFieldHTML = '<div id="inviteCodeContainer" style="position: relative;"><input type="text" id="invite_code" name="invite_code" placeholder="invite code" style="margin-bottom: 1em;"></div>';
 
         function toggleForms() {
             const form = document.querySelector('form');
@@ -266,14 +289,14 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
             const formHeader = document.getElementById('formHeader');
             if (isLoginForm) {
                 passwordField.insertAdjacentHTML('afterend', inviteCodeFieldHTML);
-                toggleFormLink.textContent = 'Login';
-                formHeader.textContent = 'Register';
-                form.querySelector('input[type="submit"]').value = 'Register';
+                toggleFormLink.textContent = 'login';
+                formHeader.textContent = 'register';
+                form.querySelector('input[type="submit"]').value = 'register';
             } else {
                 form.querySelector('#inviteCodeContainer').remove();
-                toggleFormLink.textContent = 'Register';
-                formHeader.textContent = 'Login';
-                form.querySelector('input[type="submit"]').value = 'Login';
+                toggleFormLink.textContent = 'register';
+                formHeader.textContent = 'login';
+                form.querySelector('input[type="submit"]').value = 'login';
             }
             isLoginForm = !isLoginForm;
         }
@@ -424,13 +447,15 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
     }
 
     // log uploader's IP, original filename, etc.
-    if (CONFIG::LOG_PATH)
+    if (isset($_SESSION['username']) && CONFIG::LOG_PATH)
     {
+        $username = $_SESSION['username'];
         file_put_contents(
             CONFIG::LOG_PATH,
             implode("\t", array(
                 date('c'),
                 $_SERVER['REMOTE_ADDR'],
+                $username,
                 filesize($tmpfile),
                 escapeshellarg($name),
                 $basename
@@ -564,19 +589,42 @@ function print_index() : void
         if ($user !== null && $user['isAdmin'] === true) {
             $adminPanel = <<<EOT
             <div class="container admin-panel">
-                <h2 style="margin-bottom: 1em; user-select: none;">Admin Panel</h2>
+                <h2 style="margin-bottom: 1em; user-select: none;">admin panel</h2>
                 <form method="post" autocomplete="off">
-                    <input class="styled-input" type="text" id="new_username" name="new_username" placeholder="Username" autocomplete="off">
-                    <input class="styled-input" type="password" id="new_password" name="new_password" placeholder="Password" autocomplete="off">
-                    <p style="padding-bottom: 0.2em;">
+                    <input class="styled-input" type="text" id="new_username" name="new_username" placeholder="username" autocomplete="off">
+                    <input class="styled-input" type="password" id="new_password" name="new_password" placeholder="password" autocomplete="off">
+                    <p style="padding-bottom: 0.2em; text-align: leftt !important; width: 100%;">
                       <label>
                         <input type="checkbox" id="isAdmin" name="isAdmin" />
-                        <span>Administrator</span>
+                        <span>administrator</span>
                       </label>
                     </p>
-                    <input class="styled-input styled-submit" type="submit" value="Create User">
+                    <input class="styled-input styled-submit" type="submit" value="create user">
+                </form>
+                <form method="post" id="inviteCodeForm" autocomplete="off">
+                    <div class="btn-container">
+                        <input class="styled-input" type="text" id="inviteCode" name="inviteCode" placeholder="invite code" readonly>
+                        <button class="styled-input styled-submit refresh-btn" type="button" id="generateInviteCode">
+                            <svg class="refresh-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>refresh</title><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" /></svg>
+                        </button>
+                    </div>
                 </form>
             </div>
+            <script>
+                document.getElementById("generateInviteCode").addEventListener("click", function() {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            document.getElementById("inviteCode").value = this.responseText;
+                        }
+                    };
+                
+                    xhttp.open
+                    xhttp.open("POST", "/", true);
+                    xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+                    xhttp.send("request=generateInviteCode");
+                });
+            </script>
             EOT;
         }
     }
@@ -680,7 +728,7 @@ function print_index() : void
             }
             .admin-panel {
                 margin-top: 2em;
-                padding-bottom: 1em;
+                padding-bottom: 0px;
                 position: relative;
             }
             .styled-input {
@@ -742,6 +790,32 @@ function print_index() : void
             input[type="checkbox"]:checked + span:after {
                 opacity: 1;
             }
+            .btn-container {
+                display: flex;
+                align-items: center;
+                width: 100% !important;
+            }
+            .refresh-btn {
+                margin-left: 1em;
+                background-color: #6200ee;
+                border: none;
+                color: white;
+                border-radius: 5px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                width: 2.7em;
+                height: 2.7em;
+                margin-top: 0px;
+            }
+            .refresh-btn:hover {
+                background-color: #3700b3;
+            }
+            .refresh-icon {
+                fill: white;
+                width: 1.5em;
+                height: 1.5em;
+            }
         </style>
     </head>
     <body>
@@ -751,7 +825,7 @@ function print_index() : void
                 <form method="post" enctype="multipart/form-data">
                     <input type="file" name="file" id="file" />
                     <input type="hidden" name="formatted" value="true" />
-                    <input type="submit" value="Upload"/>
+                    <input type="submit" value="upload"/>
                 </form>
                 <div class="guide">
                     <p>j select file and upload :p</p>
