@@ -370,7 +370,7 @@ function ext_by_finfo(string $path) : string
 }
 
 function sanitize_filename($name){
-    $sanitized = preg_replace('/[^a-zA-Z0-9_\.]/','', $name);
+    $sanitized = preg_replace('/[^a-zA-Z0-9_\.]/',' ', $name);
     $sanitized = str_replace(" ", "_", $sanitized);
     return $sanitized;
 }
