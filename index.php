@@ -2,18 +2,21 @@
 require 'vendor/autoload.php';
 
 use MongoDB\Client;
-use MongoDB\Driver\ServerApi;
 
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
+
+ini_set('session.cookie_httponly', 1);
+ini_set('session.cookie_secure', 1);
+ini_set('session.cookie_samesite', 'Strict');
+ini_set('session.use_strict_mode', 1);
 
 session_start();
 
 $is_file_upload = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 $uri = $_ENV['MONGODB_URI'];
-$apiVersion = new ServerApi(ServerApi::V1);
-$client = new Client($uri, [], ['serverApi' => $apiVersion]);
+$client = new Client($uri);
 $collection = $client->selectCollection($_ENV['DB_NAME'], $_ENV['COLLECTION_NAME']);
 $invitesCollection = $client->selectCollection($_ENV['DB_NAME'], 'invites');
 
@@ -21,10 +24,10 @@ if (isset($_SERVER['HTTP_TOKEN'])) {
     validateToken($collection);
 }
 
-$usernameValue = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_STRING);
-$passwordValue = filter_input(INPUT_POST, 'password', FILTER_SANITIZE_STRING);
+$usernameValue = isset($_POST['username']) ? htmlspecialchars($_POST['username'], ENT_QUOTES, 'UTF-8') : null;
+$passwordValue = $_POST['password'] ?? null;
 
-$inviteCodeValue = filter_input(INPUT_POST, 'invite_code', FILTER_SANITIZE_STRING);
+$inviteCodeValue = isset($_POST['invite_code']) ? htmlspecialchars($_POST['invite_code'], ENT_QUOTES, 'UTF-8') : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($inviteCodeValue)) {
     $errorMessage = userRegister($usernameValue, $passwordValue, $inviteCodeValue, $invitesCollection, $collection);
@@ -44,6 +47,11 @@ function html_header() {
     <title>zentimine the filehost</title>
     <link rel="icon" type="image/x-icon" href="img/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
 
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Sherbert" />
@@ -82,7 +90,7 @@ class CONFIG
 };
 
 function validateToken($collection) {
-    $token = filter_var($_SERVER['HTTP_TOKEN'], FILTER_SANITIZE_STRING);
+    $token = htmlspecialchars($_SERVER['HTTP_TOKEN'] ?? '', ENT_QUOTES, 'UTF-8');
     $user = $collection->findOne(['token' => $token]);
 
     if ($user !== null) {
@@ -102,13 +110,19 @@ function validateCredentials($usernameValue, $passwordValue, $collection) {
         $password = $passwordValue;
 
         if (!empty($username) && !empty($password)) {
+            if (!preg_match('/^[a-zA-Z0-9_-]{3,32}$/', $username)) {
+                return "Invalid username format";
+            }
+            
             $user = $collection->findOne(['username' => $username]);
 
             if ($user !== null && password_verify($password, $user['password'])) {
+                session_regenerate_id(true);
                 $_SESSION['authenticated'] = true;
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['token'] = $user['token'];
             } else {
+                usleep(500000);
                 return "Invalid credentials";
             }
         } else {
@@ -145,10 +159,22 @@ function userRegister($usernameValue, $passwordValue, $inviteCodeValue, $invites
         $inviteCode = $inviteCodeValue;
 
         if (!empty($username) && !empty($password) && !empty($inviteCode)) {
+            if (!preg_match('/^[a-zA-Z0-9_-]{3,32}$/', $username)) {
+                return "Invalid username format (3-32 alphanumeric chars, _ or - allowed)";
+            }
+            
+            if (strlen($password) < 8) {
+                return "Password must be at least 8 characters long";
+            }
+            
+            if ($collection->findOne(['username' => $username]) !== null) {
+                return "Username already taken";
+            }
+            
             $inviteCodeEntry = $invitesCollection->findOne(['code' => $inviteCode]);
 
             if ($inviteCodeEntry !== null && $inviteCodeEntry['isValid'] === true) {
-                $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+                $hashedPassword = password_hash($password, PASSWORD_ARGON2ID);
                 $token = generateToken(64);
 
                 $collection->insertOne([
@@ -156,18 +182,21 @@ function userRegister($usernameValue, $passwordValue, $inviteCodeValue, $invites
                     'password' => $hashedPassword,
                     'isAdmin' => false,
                     'token' => $token,
-                    'usedInviteCode' => $inviteCode
+                    'usedInviteCode' => $inviteCode,
+                    'createdAt' => new \MongoDB\BSON\UTCDateTime()
                 ]);
 
                 $invitesCollection->updateOne(
                     ['code' => $inviteCode],
-                    ['$set' => ['isValid' => false]]
+                    ['$set' => ['isValid' => false, 'usedAt' => new \MongoDB\BSON\UTCDateTime()]]
                 );
 
+                session_regenerate_id(true);
                 $_SESSION['authenticated'] = true;
                 $_SESSION['username'] = $username;
                 $_SESSION['token'] = $token;
             } else {
+                usleep(500000); // Prevent timing attacks
                 return "Invalid invite code";
             }
         } else {
@@ -177,7 +206,19 @@ function userRegister($usernameValue, $passwordValue, $inviteCodeValue, $invites
 }
 
 function userCreate($usernameValue, $passwordValue, $isAdmin, $collection) {
-    $hashedPassword = password_hash($passwordValue, PASSWORD_DEFAULT);
+    if (!preg_match('/^[a-zA-Z0-9_-]{3,32}$/', $usernameValue)) {
+        return false;
+    }
+    
+    if ($collection->findOne(['username' => $usernameValue]) !== null) {
+        return false;
+    }
+    
+    if (strlen($passwordValue) < 8) {
+        return false;
+    }
+    
+    $hashedPassword = password_hash($passwordValue, PASSWORD_ARGON2ID);
     $token = generateToken(64);
 
     $collection->insertOne([
@@ -185,7 +226,10 @@ function userCreate($usernameValue, $passwordValue, $isAdmin, $collection) {
         'password' => $hashedPassword,
         'isAdmin' => $isAdmin,
         'token' => $token,
+        'createdAt' => new \MongoDB\BSON\UTCDateTime()
     ]);
+    
+    return true;
 }
 
 function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
@@ -313,7 +357,7 @@ function rnd_str(int $len) : string
     $out = '';
     while ($len--)
     {
-        $out .= $chars[mt_rand(0,$max_idx)];
+        $out .= $chars[random_int(0,$max_idx)];
     }
     return $out;
 }
@@ -383,10 +427,16 @@ function sanitize_filename($name){
 // $formatted: set to true to display formatted message instead of bare link
 function store_file(string $name, string $tmpfile, bool $formatted = false) : void
 {
+    if (strpos($name, '..') !== false || strpos($name, '/') !== false || strpos($name, '\\') !== false) {
+        header('HTTP/1.0 400 Bad Request');
+        print('Error 400: Invalid filename\n');
+        return;
+    }
+    
     //create folder, if it doesn't exist
     if (!file_exists(CONFIG::STORE_PATH))
     {
-        mkdir(CONFIG::STORE_PATH, 0750, true); //TODO: error handling
+        mkdir(CONFIG::STORE_PATH, 0750, true);
     }
 
     //check file size
@@ -394,7 +444,7 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
     if ($size > CONFIG::MAX_FILESIZE * 1024 * 1024)
     {
         header('HTTP/1.0 413 Payload Too Large');
-        print("Error 413: Max File Size ({CONFIG::MAX_FILESIZE} MiB) Exceeded\n");
+        print("Error 413: Max File Size (" . CONFIG::MAX_FILESIZE . " MiB) Exceeded\n");
         return;
     }
     if ($size == 0)
@@ -406,6 +456,11 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
 
     $original_name = pathinfo($name, PATHINFO_FILENAME);
     $ext = ext_by_path($name);
+    
+    if (strlen($ext) > CONFIG::MAX_EXT_LEN) {
+        $ext = substr($ext, 0, CONFIG::MAX_EXT_LEN);
+    }
+    
     $basename = sanitize_filename($original_name . '_' . rnd_str(5) . '.' . $ext);
     $target_file = CONFIG::STORE_PATH . $basename;
 
@@ -848,18 +903,12 @@ function print_index() : void
 }
 
 function generateToken($length = 64) {
-    $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    $charactersLength = strlen($characters);
-    $randomString = '';
-    for ($i = 0; $i < $length; $i++) {
-        $randomString .= $characters[rand(0, $charactersLength - 1)];
-    }
-    return $randomString;
+    return bin2hex(random_bytes($length / 2));
 }
 
-$newUsernameValue = filter_input(INPUT_POST, 'new_username', FILTER_SANITIZE_STRING);
-$newPasswordValue = filter_input(INPUT_POST, 'new_password', FILTER_SANITIZE_STRING);
-$isAdminValue = filter_input(INPUT_POST, 'isAdmin', FILTER_VALIDATE_BOOLEAN);
+$newUsernameValue = isset($_POST['new_username']) ? htmlspecialchars($_POST['new_username'], ENT_QUOTES, 'UTF-8') : null;
+$newPasswordValue = $_POST['new_password'] ?? null;
+$isAdminValue = isset($_POST['isAdmin']) ? filter_var($_POST['isAdmin'], FILTER_VALIDATE_BOOLEAN) : false;
 
 if (isset($newUsernameValue) && isset($newPasswordValue)) {
     $newUsername = $newUsernameValue;
@@ -867,11 +916,22 @@ if (isset($newUsernameValue) && isset($newPasswordValue)) {
     $isAdmin = isset($_POST['isAdmin']) ? filter_var($_POST['isAdmin'], FILTER_VALIDATE_BOOLEAN) : false;
 
     if (!empty($newUsername) && !empty($newPassword)) {
-        userCreate($newUsername, $newPassword, $isAdmin, $collection);
-
-        $redirectURL = str_replace('index.php', '', $_SERVER['REQUEST_URI']);
-        header("Location: " . $redirectURL);
-        exit;
+        if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+            header('HTTP/1.0 401 Unauthorized');
+            exit;
+        }
+        
+        $currentUser = $collection->findOne(['username' => $_SESSION['username']]);
+        if ($currentUser === null || $currentUser['isAdmin'] !== true) {
+            header('HTTP/1.0 403 Forbidden');
+            exit;
+        }
+        
+        if (userCreate($newUsername, $newPassword, $isAdmin, $collection)) {
+            $redirectURL = str_replace('index.php', '', $_SERVER['REQUEST_URI']);
+            header("Location: " . $redirectURL);
+            exit;
+        }
     }
 }
 
