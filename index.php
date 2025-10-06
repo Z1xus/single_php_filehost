@@ -509,6 +509,104 @@ function sanitize_filename($name){
     return $sanitized;
 }
 
+function show_error_page($title, $message) {
+    html_header();
+    echo <<<EOT
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #bb86fc;
+            --primary-dark: #9965db;
+            --primary-light: #c8a3f0;
+            --bg-dark: #000000;
+            --bg-elevated: #0a0a0a;
+            --bg-card: #111111;
+            --text-primary: #e0e0e0;
+            --text-secondary: #808080;
+            --border: rgba(187, 134, 252, 0.15);
+            --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.8);
+            --error: #cf6679;
+        }
+        
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #0a0314 100%);
+            font-family: 'Space Mono', monospace;
+            color: var(--text-primary);
+            padding: 12px;
+            text-transform: lowercase;
+        }
+        
+        .error-container {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 32px 28px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--error);
+            margin-bottom: 12px;
+        }
+        
+        h2::before {
+            content: '# ';
+            color: var(--error);
+        }
+        
+        .error-message {
+            color: var(--text-secondary);
+            font-size: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: 12px;
+            font-weight: 400;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: 'Space Mono', monospace;
+            text-decoration: none;
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: var(--text-primary);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    
+    <div class="error-container">
+        <h2>$title</h2>
+        <p class="error-message">$message</p>
+        <a href="/" class="btn">go back</a>
+    </div>
+EOT;
+    exit;
+}
+
 // store an uploaded file, given its name and temporary path (e.g. values straight out of $_FILES)
 // files are stored wit a randomised name, but with their original extension
 //
@@ -533,14 +631,22 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
     $size = filesize($tmpfile);
     if ($size > CONFIG::MAX_FILESIZE * 1024 * 1024)
     {
-        header('HTTP/1.0 413 Payload Too Large');
-        print("Error 413: Max File Size (" . CONFIG::MAX_FILESIZE . " MiB) Exceeded\n");
+        if ($formatted) {
+            show_error_page("file too large", "maximum file size is " . CONFIG::MAX_FILESIZE . " mib");
+        } else {
+            header('HTTP/1.0 413 Payload Too Large');
+            print("Error 413: Max File Size (" . CONFIG::MAX_FILESIZE . " MiB) Exceeded\n");
+        }
         return;
     }
     if ($size == 0)
     {
-        header('HTTP/1.0 400 Bad Request');
-        print('Error 400: Uploaded file is empty\n');
+        if ($formatted) {
+            show_error_page("empty file", "uploaded file is empty");
+        } else {
+            header('HTTP/1.0 400 Bad Request');
+            print('Error 400: Uploaded file is empty\n');
+        }
         return;
     }
 
@@ -584,7 +690,183 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
 
     if ($formatted)
     {
-        print("<pre>link to your file :>\n<a href=\"$url\">$url</a></pre>");
+        html_header();
+        echo <<<EOT
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            :root {
+                --primary: #bb86fc;
+                --primary-dark: #9965db;
+                --primary-light: #c8a3f0;
+                --bg-dark: #000000;
+                --bg-elevated: #0a0a0a;
+                --bg-card: #111111;
+                --text-primary: #e0e0e0;
+                --text-secondary: #808080;
+                --border: rgba(187, 134, 252, 0.15);
+                --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.8);
+            }
+            
+            body {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                margin: 0;
+                background: linear-gradient(135deg, var(--bg-dark) 0%, #0a0314 100%);
+                font-family: 'Space Mono', monospace;
+                color: var(--text-primary);
+                padding: 12px;
+                text-transform: lowercase;
+            }
+            
+            .success-container {
+                background: var(--bg-card);
+                border-radius: 10px;
+                padding: 32px 28px;
+                box-shadow: var(--shadow-lg);
+                border: 1px solid var(--border);
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+            }
+            
+            .success-icon {
+                font-size: 48px;
+                margin-bottom: 16px;
+            }
+            
+            h2 {
+                font-size: 18px;
+                font-weight: 700;
+                color: var(--text-primary);
+                margin-bottom: 20px;
+            }
+            
+            h2::before {
+                content: '# ';
+                color: var(--primary);
+            }
+            
+            .url-box {
+                background: var(--bg-elevated);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 16px;
+                word-break: break-all;
+            }
+            
+            .url-link {
+                color: var(--primary);
+                text-decoration: none;
+                font-size: 12px;
+                transition: color 0.2s ease;
+            }
+            
+            .url-link:hover {
+                color: var(--primary-light);
+            }
+            
+            .button-group {
+                display: flex;
+                gap: 12px;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            
+            .btn {
+                padding: 10px 20px;
+                border-radius: 8px;
+                border: none;
+                font-size: 12px;
+                font-weight: 400;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                font-family: 'Space Mono', monospace;
+                text-decoration: none;
+                display: inline-block;
+            }
+            
+            .btn-primary {
+                background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+                color: var(--text-primary);
+            }
+            
+            .btn-primary:hover {
+                transform: translateY(-2px);
+            }
+            
+            .btn-secondary {
+                background: var(--bg-elevated);
+                color: var(--text-secondary);
+                border: 1px solid var(--border);
+            }
+            
+            .btn-secondary:hover {
+                color: var(--text-primary);
+                transform: translateY(-2px);
+            }
+            
+            .info-text {
+                color: var(--text-secondary);
+                font-size: 11px;
+                margin-top: 16px;
+                min-height: 16px;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+            }
+            
+            .info-text.show {
+                opacity: 1;
+            }
+        </style>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+        
+        <div class="success-container">
+            <h2>file uploaded successfully</h2>
+            
+            <div class="url-box">
+                <a href="$url" class="url-link" target="_blank">$url</a>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="copyToClipboard('$url')">copy link</button>
+                <a href="/" class="btn btn-secondary">upload another</a>
+            </div>
+            
+            <p class="info-text"></p>
+        </div>
+        
+        <script>
+            function copyToClipboard(text) {
+                navigator.clipboard.writeText(text).then(function() {
+                    const infoText = document.querySelector('.info-text');
+                    infoText.textContent = '// link copied to clipboard!';
+                    infoText.style.color = 'var(--primary)';
+                    infoText.classList.add('show');
+                    setTimeout(() => {
+                        infoText.classList.remove('show');
+                    }, 2000);
+                }, function(err) {
+                    const infoText = document.querySelector('.info-text');
+                    infoText.textContent = '// failed to copy link';
+                    infoText.style.color = '#cf6679';
+                    infoText.classList.add('show');
+                    setTimeout(() => {
+                        infoText.classList.remove('show');
+                    }, 2000);
+                });
+            }
+        </script>
+EOT;
     }
     else
     {
@@ -1223,11 +1505,12 @@ function print_index() : void
             
             <div class="container">
                 <h1>zentimine.xyz</h1>
-                <form method="post" enctype="multipart/form-data">
+                <form method="post" enctype="multipart/form-data" id="uploadForm">
                     <input type="file" name="file" id="file" />
                     <input type="hidden" name="formatted" value="true" />
                     <input type="submit" value="upload file"/>
                 </form>
+                <p id="errorMessage" style="color: #cf6679; font-size: 11px; margin-top: 8px; min-height: 16px;"></p>
                 <div class="guide">
                     <p>select a file and upload</p>
                     <p>max filesize: <span class="highlight">$max_size mib</span></p>
@@ -1247,6 +1530,37 @@ function print_index() : void
                 $adminPanel
             </div>
         </div>
+        
+        <script>
+            const maxFileSize = $max_size * 1024 * 1024;
+            const uploadForm = document.getElementById('uploadForm');
+            const fileInput = document.getElementById('file');
+            const errorMessage = document.getElementById('errorMessage');
+            
+            uploadForm.addEventListener('submit', function(e) {
+                errorMessage.textContent = '';
+                
+                if (!fileInput.files.length) {
+                    e.preventDefault();
+                    errorMessage.textContent = '// please select a file';
+                    return false;
+                }
+                
+                const file = fileInput.files[0];
+                
+                if (file.size > maxFileSize) {
+                    e.preventDefault();
+                    errorMessage.textContent = '// file too large (max $max_size mib)';
+                    return false;
+                }
+                
+                if (file.size === 0) {
+                    e.preventDefault();
+                    errorMessage.textContent = '// file is empty';
+                    return false;
+                }
+            });
+        </script>
     </body>
     </html>
     EOT;
