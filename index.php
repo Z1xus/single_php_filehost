@@ -67,7 +67,7 @@ EOT;
 class CONFIG
 {
     const MAX_FILESIZE = 2048; //max. filesize in MiB
-    const MAX_FILEAGE = 31; //max. age of files in days
+    const MAX_FILEAGE = 0; //max. age of files in days
     const MIN_FILEAGE = 7; //min. age of files in days
     const DECAY_EXP = 2; //high values penalise larger files more
 
@@ -138,6 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request']) && $_POST[
         echo $inviteCode;
         exit;
     }
+}
+
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?'));
+    exit;
 }
 
 function generateInviteCode($username, $invitesCollection) {
@@ -237,77 +243,161 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     $headerText = "login";
     echo <<<EOT
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #bb86fc;
+            --primary-dark: #9965db;
+            --primary-light: #c8a3f0;
+            --bg-dark: #000000;
+            --bg-elevated: #0a0a0a;
+            --bg-card: #111111;
+            --text-primary: #e0e0e0;
+            --text-secondary: #808080;
+            --border: rgba(187, 134, 252, 0.15);
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+            --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.8);
+        }
+        
         body {
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100svh;
+            min-height: 100vh;
             margin: 0;
-            background-color: #121212;
-            font-family: Arial, sans-serif;
-            color: #fff;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #0a0314 100%);
+            font-family: 'Space Mono', monospace;
+            color: var(--text-primary);
+            padding: 12px;
+            text-transform: lowercase;
         }
+        
         form {
-            background-color: #1e1e1e;
-            padding: 1em;
-            border-radius: 5px;
-            width: 70%;
-            max-width: 300px;
-            margin-left: auto;
-            margin-right: auto;
-            box-shadow: 0px 0px 10px 0px rgba(255,255,255,0.1);
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 24px;
+            width: 100%;
+            max-width: 380px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
         }
-        label {
-            display: block;
-            margin-bottom: 5px;
+        
+        h2 {
+            text-align: center;
+            color: var(--text-primary);
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: 700;
         }
+        
+        h2::before {
+            content: '# ';
+            color: var(--primary);
+        }
+        
         input[type="text"], input[type="password"] {
             width: 100%;
-            padding: 10px;
-            margin-bottom: 1em;
-            border-radius: 5px;
-            border: 1px solid #6200ee;
-            color: #fff;
-            background-color: #1e1e1e;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            font-size: 11px;
+            font-family: 'Space Mono', monospace;
+            transition: all 0.2s ease;
             box-sizing: border-box;
         }
+        
+        input[type="text"]:focus, input[type="password"]:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(187, 134, 252, 0.1);
+        }
+        
+        input[type="text"]::placeholder, input[type="password"]::placeholder {
+            color: var(--text-secondary);
+        }
+        
         input[type="submit"] {
             width: 100%;
-            padding: 10px;
-            border-radius: 5px;
-            border: 0;
-            color: #fff;
-            background-color: #6200ee;
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            font-size: 12px;
+            font-weight: 400;
             cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: 'Space Mono', monospace;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: var(--text-primary);
         }
+        
         input[type="submit"]:hover {
-            background-color: #3700b3;
+            transform: translateY(-2px);
         }
+        
+        input[type="submit"]:active {
+            transform: translateY(0);
+        }
+        
         .error {
             color: #cf6679;
-            margin-bottom: 1em;
+            margin-bottom: 12px;
+            font-size: 11px;
+            min-height: 16px;
         }
+        
+        .password-container {
+            position: relative;
+        }
+        
         .eye-icon {
             position: absolute;
-            margin-left: -30px;
-            margin-top: 12px;
-            color: #ccc;
+            right: 12px;
+            top: 12px;
+            color: var(--text-secondary);
             cursor: pointer;
+            font-size: 11px;
+            transition: color 0.2s ease;
+        }
+        
+        .eye-icon:hover {
+            color: var(--text-primary);
+        }
+        
+        .toggle-link {
+            display: block;
+            text-align: right;
+            margin-top: 12px;
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 11px;
+            transition: color 0.2s ease;
+        }
+        
+        .toggle-link:hover {
+            color: var(--primary-light);
         }
     </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
     <form method="post">
-        <h2 id="formHeader" style="text-align: center; color: #fff; margin-bottom: 1em;">$headerText</h2>
-        <input type="text" id="username" name="username" value="$usernameValue" placeholder="username" style="margin-bottom: 1em;">
-        <div style="position: relative;">
-            <div>
-                <input type="password" id="password" name="password" value="$passwordValue" placeholder="password" style="margin-bottom: 1em;">
-                <i id="togglePassword" class="fas fa-eye eye-icon" onclick="togglePasswordVisibility()"></i>
-            </div>
+        <h2 id="formHeader">$headerText</h2>
+        <input type="text" id="username" name="username" value="$usernameValue" placeholder="username">
+        <div class="password-container">
+            <input type="password" id="password" name="password" value="$passwordValue" placeholder="password">
+            <i id="togglePassword" class="fas fa-eye eye-icon" onclick="togglePasswordVisibility()"></i>
         </div>
         <div class="error">$errorMessage</div>
         <input type="submit" value="login">
-        <a href="#" id="toggleForm" onclick="toggleForms()" style="display: block; text-align: right; margin-top: 10px; color: #9959f4; text-decoration: none;">register</a>
+        <a href="#" id="toggleForm" onclick="toggleForms()" class="toggle-link">register</a>
     </form>
     <script>
         function togglePasswordVisibility() {
@@ -324,20 +414,20 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
             }
         }
         let isLoginForm = true;
-        let inviteCodeFieldHTML = '<div id="inviteCodeContainer" style="position: relative;"><input type="text" id="invite_code" name="invite_code" placeholder="invite code" style="margin-bottom: 1em;"></div>';
+        let inviteCodeFieldHTML = '<input type="text" id="invite_code" name="invite_code" placeholder="invite code" style="margin-bottom: 12px;">';
 
         function toggleForms() {
             const form = document.querySelector('form');
             const toggleFormLink = document.getElementById('toggleForm');
-            const passwordField = form.querySelector('#password').parentElement;
+            const passwordContainer = form.querySelector('.password-container');
             const formHeader = document.getElementById('formHeader');
             if (isLoginForm) {
-                passwordField.insertAdjacentHTML('afterend', inviteCodeFieldHTML);
+                passwordContainer.insertAdjacentHTML('afterend', inviteCodeFieldHTML);
                 toggleFormLink.textContent = 'login';
                 formHeader.textContent = 'register';
                 form.querySelector('input[type="submit"]').value = 'register';
             } else {
-                form.querySelector('#inviteCodeContainer').remove();
+                form.querySelector('#invite_code').remove();
                 toggleFormLink.textContent = 'register';
                 formHeader.textContent = 'login';
                 form.querySelector('input[type="submit"]').value = 'login';
@@ -523,6 +613,11 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
 // purge all files older than their retention period allows.
 function purge_files() : void
 {
+    if (CONFIG::MAX_FILEAGE === 0) {
+        print("File purging is disabled (MAX_FILEAGE = 0)\n");
+        return;
+    }
+    
     $num_del = 0;    //number of deleted files
     $total_size = 0; //total size of deleted files
 
@@ -631,11 +726,14 @@ function print_index() : void
     $site_url = CONFIG::SITE_URL();
     $sharex_url = $site_url.'?sharex';
     $hupl_url = $site_url.'?hupl';
+    $logout_url = $site_url.'?logout';
     $decay = CONFIG::DECAY_EXP;
     $min_age = CONFIG::MIN_FILEAGE;
     $max_size = CONFIG::MAX_FILESIZE;
-    $max_age = CONFIG::MAX_FILEAGE;
+    $max_age = CONFIG::MAX_FILEAGE === 0 ? 'unlimited' : CONFIG::MAX_FILEAGE . ' days';
+    $warning = CONFIG::MAX_FILEAGE === 0 ? '<p style="font-size: 10px; margin-top: 8px; opacity: 0.7;">do not use as cdn or permanent storage. files may be removed at any time without notice.</p>' : '';
     $mail = CONFIG::ADMIN_EMAIL;
+    $username = htmlspecialchars($_SESSION['username'] ?? '', ENT_QUOTES, 'UTF-8');
 
     $adminPanel = '';
     if (isset($_SESSION['authenticated']) && $_SESSION['authenticated'] === true) {
@@ -648,19 +746,19 @@ function print_index() : void
                 <form method="post" autocomplete="off">
                     <input class="styled-input" type="text" id="new_username" name="new_username" placeholder="username" autocomplete="off">
                     <input class="styled-input" type="password" id="new_password" name="new_password" placeholder="password" autocomplete="off">
-                    <p style="padding-bottom: 0.2em; text-align: leftt !important; width: 100%;">
+                    <p style="padding-bottom: 0.8em; text-align: left !important; width: 100%;">
                       <label>
                         <input type="checkbox" id="isAdmin" name="isAdmin" />
                         <span>administrator</span>
                       </label>
                     </p>
-                    <input class="styled-input styled-submit" type="submit" value="create user">
+                    <button class="styled-btn primary-btn" type="submit">create user</button>
                 </form>
                 <form method="post" id="inviteCodeForm" autocomplete="off">
                     <div class="btn-container">
                         <input class="styled-input" type="text" id="inviteCode" name="inviteCode" placeholder="invite code" readonly>
-                        <button class="styled-input styled-submit refresh-btn" type="button" id="generateInviteCode">
-                            <svg class="refresh-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>refresh</title><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" /></svg>
+                        <button class="icon-btn primary-btn" type="button" id="generateInviteCode">
+                            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" /></svg>
                         </button>
                     </div>
                 </form>
@@ -673,8 +771,6 @@ function print_index() : void
                             document.getElementById("inviteCode").value = this.responseText;
                         }
                     };
-                
-                    xhttp.open
                     xhttp.open("POST", "/", true);
                     xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
                     xhttp.send("request=generateInviteCode");
@@ -688,11 +784,10 @@ function print_index() : void
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <title>Zentimine.xyz</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
+        <title>zentimine.xyz</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         
         <style>
@@ -701,6 +796,21 @@ function print_index() : void
                 padding: 0;
                 box-sizing: border-box;
             }
+            
+            :root {
+                --primary: #bb86fc;
+                --primary-dark: #9965db;
+                --primary-light: #c8a3f0;
+                --bg-dark: #000000;
+                --bg-elevated: #0a0a0a;
+                --bg-card: #111111;
+                --text-primary: #e0e0e0;
+                --text-secondary: #808080;
+                --border: rgba(187, 134, 252, 0.15);
+                --shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+                --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.8);
+            }
+            
             body {
                 display: flex;
                 flex-direction: column;
@@ -708,191 +818,429 @@ function print_index() : void
                 align-items: center;
                 min-height: 100vh;
                 margin: 0;
-                background-color: #121212;
-                font-family: Arial, sans-serif;
-                color: #fff;
+                background: linear-gradient(135deg, var(--bg-dark) 0%, #0a0314 100%);
+                font-family: 'Space Mono', monospace;
+                color: var(--text-primary);
+                padding: 12px;
+                text-transform: lowercase;
             }
+            
             .wrapper {
-                padding: 1.2em;
-                margin: 1em; /* Add margin */
-                box-sizing: border-box;
-            }
-            .container {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                background-color: #1e1e1e;
-                padding: 1.3em;
-                border-radius: 5px;
-                box-shadow: 0px 0px 10px 0px rgba(255,255,255,0.1);
                 width: 100%;
-                max-width: 600px;
-                box-sizing: border-box;
+                max-width: 420px;
+                animation: fadeIn 0.5s ease-out;
             }
+            
+            .admin-panel .container {
+                max-width: 420px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .header-bar {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+                padding: 0 4px;
+            }
+            
+            .user-info {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                color: var(--text-secondary);
+                font-size: 11px;
+                font-weight: 400;
+            }
+            
+            .user-info::before {
+                content: '>';
+                color: var(--primary);
+                font-weight: 700;
+            }
+            
+            .logout-btn {
+                padding: 6px 12px;
+                border-radius: 6px;
+                border: none;
+                background: var(--bg-card);
+                color: var(--text-secondary);
+                font-size: 11px;
+                font-weight: 400;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                text-decoration: none;
+                display: inline-block;
+            }
+            
+            .logout-btn:hover {
+                background: var(--bg-elevated);
+                color: var(--text-primary);
+                transform: translateY(-1px);
+            }
+            
+            .container {
+                background: var(--bg-card);
+                border-radius: 10px;
+                padding: 20px 24px;
+                box-shadow: var(--shadow-lg);
+                border: 1px solid var(--border);
+                margin-bottom: 12px;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            
+            .container:hover {
+                box-shadow: 0 6px 24px rgba(0, 0, 0, 0.9);
+                border-color: rgba(187, 134, 252, 0.25);
+            }
+            
+            h1 {
+                font-family: 'Space Mono', monospace;
+                font-size: 20px;
+                font-weight: 700;
+                background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                margin-bottom: 20px;
+                text-align: center;
+                user-select: none;
+                letter-spacing: 0px;
+            }
+            
+            h1::before {
+                content: '$ ';
+                color: var(--primary);
+            }
+            
+            h2 {
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--text-primary);
+                margin-bottom: 16px;
+            }
+            
+            h2::before {
+                content: '# ';
+                color: var(--primary);
+            }
+            
             form {
                 display: flex;
                 flex-direction: column;
-                align-items: center;
                 width: 100%;
-                max-width: 300px;
-                margin-bottom: 2em;
+                margin-bottom: 16px;
             }
-            input[type="file"], input[type="submit"] {
-                width: 100%;
-                padding: 10px;
-                margin-bottom: 2em;
-                border-radius: 5px;
-                border: 1px solid #6200ee;
-                color: #fff;
-                background-color: #1e1e1e;
-                box-sizing: border-box;
-                cursor: pointer;
-            }
-            input[type="submit"] {
-                background-color: #6200ee;
-                margin-bottom: -4px;
+            
+            input[type="file"] {
                 width: 100%;
                 padding: 10px;
-                border-radius: 5px;
-                border: 0;
-                color: #fff;
-                background-color: #6200ee;
+                margin-bottom: 10px;
+                border-radius: 8px;
+                border: 2px dashed var(--border);
+                background: var(--bg-elevated);
+                color: var(--text-primary);
                 cursor: pointer;
+                transition: all 0.2s ease;
+                font-family: 'Space Mono', monospace;
+                font-size: 11px;
             }
-            input[type="submit"]:hover {
-                background-color: #3700b3;
+            
+            input[type="file"]:hover {
+                border-color: var(--primary);
+                background: var(--bg-card);
             }
+            
+            input[type="file"]::file-selector-button {
+                padding: 6px 12px;
+                border-radius: 6px;
+                border: none;
+                background: var(--primary);
+                color: var(--text-primary);
+                cursor: pointer;
+                font-weight: 400;
+                margin-right: 10px;
+                transition: all 0.2s ease;
+                font-family: 'Space Mono', monospace;
+                font-size: 11px;
+            }
+            
+            input[type="file"]::file-selector-button:hover {
+                background: var(--primary-dark);
+                transform: translateY(-1px);
+            }
+            
+            input[type="file"]::file-selector-button::before {
+                content: '> ';
+            }
+            
+            .styled-btn, input[type="submit"] {
+                width: 100%;
+                padding: 10px 16px;
+                border-radius: 8px;
+                border: none;
+                font-size: 12px;
+                font-weight: 400;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                font-family: 'Space Mono', monospace;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .primary-btn, input[type="submit"] {
+                background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+                color: var(--text-primary);
+            }
+            
+            .primary-btn:hover, input[type="submit"]:hover {
+                transform: translateY(-2px);
+            }
+            
+            .primary-btn:active, input[type="submit"]:active {
+                transform: translateY(0);
+            }
+            
+            .styled-input {
+                width: 100%;
+                padding: 10px 12px;
+                margin-bottom: 12px;
+                border-radius: 8px;
+                border: 1px solid var(--border);
+                background: var(--bg-elevated);
+                color: var(--text-primary);
+                font-size: 11px;
+                font-family: 'Space Mono', monospace;
+                transition: all 0.2s ease;
+            }
+            
+            .styled-input:focus {
+                outline: none;
+                border-color: var(--primary);
+                box-shadow: 0 0 0 3px rgba(187, 134, 252, 0.1);
+            }
+            
+            .styled-input::placeholder {
+                color: var(--text-secondary);
+            }
+            
             .guide {
                 text-align: center;
-                margin-bottom: 1em;
+                margin-bottom: 16px;
+                color: var(--text-secondary);
+                line-height: 1.5;
             }
+            
             .guide p {
-                margin-bottom: 0.5em
+                margin-bottom: 4px;
+                font-size: 11px;
             }
+            
+            .guide p:first-child {
+                font-size: 11px;
+                color: var(--text-primary);
+                margin-bottom: 8px;
+            }
+            
+            .guide p:first-child::before {
+                content: '// ';
+                color: var(--primary);
+                font-weight: 700;
+            }
+            
+            .highlight {
+                color: var(--primary-light);
+                font-weight: 700;
+            }
+            
             .links {
                 display: flex;
                 justify-content: center;
-                gap: 10px;
+                align-items: center;
+                gap: 6px;
+                flex-wrap: wrap;
             }
+            
             .links a {
-                color: #fff;
+                color: var(--primary);
                 text-decoration: none;
+                font-size: 11px;
+                font-weight: 400;
+                padding: 4px 8px;
+                border-radius: 6px;
+                transition: all 0.2s ease;
             }
+            
+            .links a::before {
+                content: '[';
+                color: var(--text-secondary);
+                margin-right: 2px;
+            }
+            
+            .links a::after {
+                content: ']';
+                color: var(--text-secondary);
+                margin-left: 2px;
+            }
+            
             .links a:hover {
-                text-decoration: underline;
+                background: var(--bg-elevated);
+                color: var(--primary-light);
             }
-            .admin-panel {
-                margin-top: 2em;
-                padding-bottom: 0px;
-                position: relative;
+            
+            .separator {
+                color: var(--text-secondary);
+                user-select: none;
             }
-            .styled-input {
-                width: 100%;
-                padding: 10px;
-                margin-bottom: 1em;
-                border-radius: 5px;
-                border: 1px solid #6200ee;
-                color: #fff;
-                background-color: #1e1e1e;
-                box-sizing: border-box;
+            
+            .admin-panel .container {
+                animation: fadeIn 0.5s ease-out 0.1s both;
             }
-            .styled-submit {
-                background-color: #6200ee;
-                cursor: pointer;
-                margin-top: 1em;
-            }
-            .styled-submit:hover {
-                background-color: #3700b3;
-            }
+            
             input[type="checkbox"] {
                 position: absolute;
                 opacity: 0;
             }
+            
             input[type="checkbox"] + span {
                 position: relative;
-                padding-left: 35px;
+                padding-left: 26px;
                 cursor: pointer;
                 display: inline-block;
+                user-select: none;
+                color: var(--text-secondary);
+                font-size: 11px;
             }
+            
             input[type="checkbox"] + span:before {
                 content: '';
                 position: absolute;
                 left: 0;
-                top: -3px;
-                width: 20px;
-                height: 20px;
-                border: 2px solid #6200ee;
-                border-radius: 3px;
-                background-color: transparent;
-                transition: all 0.3s ease-in-out;
+                top: -1px;
+                width: 16px;
+                height: 16px;
+                border: 2px solid var(--border);
+                border-radius: 4px;
+                background: var(--bg-elevated);
+                transition: all 0.2s ease;
             }
+            
+            input[type="checkbox"]:checked + span {
+                color: var(--text-primary);
+            }
+            
+            input[type="checkbox"]:checked + span:before {
+                background: var(--primary);
+                border-color: var(--primary);
+            }
+            
             input[type="checkbox"] + span:after {
                 content: '';
                 position: absolute;
-                top: 1px;
-                left: 8px;
-                width: 5px;
-                height: 10px;
-                border: solid white;
-                border-width: 0 3px 3px 0;
+                top: 2px;
+                left: 6px;
+                width: 4px;
+                height: 8px;
+                border: solid var(--text-primary);
+                border-width: 0 2px 2px 0;
                 transform: rotate(45deg);
                 opacity: 0;
-                transition: all 0.3s ease-in-out;
+                transition: opacity 0.2s ease;
             }
-            input[type="checkbox"]:checked + span:before {
-                background-color: #6200ee;
-            }
+            
             input[type="checkbox"]:checked + span:after {
                 opacity: 1;
             }
+            
             .btn-container {
                 display: flex;
                 align-items: center;
-                width: 100% !important;
+                gap: 8px;
             }
-            .refresh-btn {
-                margin-left: 1em;
-                background-color: #6200ee;
+            
+            .btn-container .styled-input {
+                margin-bottom: 0;
+                flex: 1;
+            }
+            
+            .icon-btn {
+                padding: 10px;
+                border-radius: 8px;
                 border: none;
-                color: white;
-                border-radius: 5px;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
-                width: 2.7em;
-                height: 2.7em;
-                margin-top: 0px;
+                justify-content: center;
+                min-width: 38px;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             }
-            .refresh-btn:hover {
-                background-color: #3700b3;
+            
+            .icon-btn.primary-btn {
+                background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             }
-            .refresh-icon {
-                fill: white;
-                width: 1.5em;
-                height: 1.5em;
+            
+            .icon-btn:hover {
+                transform: translateY(-2px);
+            }
+            
+            .icon {
+                fill: var(--text-primary);
+                width: 16px;
+                height: 16px;
+            }
+            
+            @media (max-width: 600px) {
+                .container {
+                    padding: 16px;
+                }
+                
+                h1 {
+                    font-size: 18px;
+                }
+                
+                .user-info span {
+                    display: none;
+                }
             }
         </style>
     </head>
     <body>
         <div class="wrapper">
+            <div class="header-bar">
+                <div class="user-info">
+                    <span>$username</span>
+                </div>
+                <a href="$logout_url" class="logout-btn">logout</a>
+            </div>
+            
             <div class="container">
-                <h1 style="color: #a500d0; font-family: 'Roboto Mono', sans-serif; margin-bottom: 1em; user-select: none;">zentimine.xyz</h1>
+                <h1>zentimine.xyz</h1>
                 <form method="post" enctype="multipart/form-data">
                     <input type="file" name="file" id="file" />
                     <input type="hidden" name="formatted" value="true" />
-                    <input type="submit" value="upload"/>
+                    <input type="submit" value="upload file"/>
                 </form>
                 <div class="guide">
-                    <p>j select file and upload :p</p>
-                    <p>max filesize: <span style="color:#b88cf7">$max_size mib</span></p>
-                    <p>files are kept for a maximum of <span style="color:#b88cf7">$max_age days</span></>
+                    <p>select a file and upload</p>
+                    <p>max filesize: <span class="highlight">$max_size mib</span></p>
+                    <p>files kept for maximum: <span class="highlight">$max_age</span></p>
+                    $warning
                 </div>
                 <div class="links">
-                    <a style="color: #9959f4;" href="$sharex_url">sharex config</a><span style="color:#b88cf7"> •</span>
-                    <a style="color: #9959f4;" href="https://github.com/Z1xus/single_php_filehost">source</a><span style="color:#b88cf7"> •</span>
-                    <a style="color: #9959f4;" href="https://z1xus.netlify.app/">contact</a>
+                    <a href="$sharex_url">sharex config</a>
+                    <span class="separator">•</span>
+                    <a href="https://github.com/Z1xus/single_php_filehost">source</a>
+                    <span class="separator">•</span>
+                    <a href="https://z1x.us">contact</a>
                 </div>
             </div>
+            
             <div class="admin-panel">
                 $adminPanel
             </div>
