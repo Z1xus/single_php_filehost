@@ -689,15 +689,17 @@ function send_sharex_config() : void
     $site_url = str_replace("?sharex", "", CONFIG::SITE_URL());
     send_text_file($name.'.sxcu', <<<EOT
 {
+  "Version": "17.0.0",
   "Name": "$name",
   "DestinationType": "ImageUploader, FileUploader",
-  "RequestType": "POST",
+  "RequestMethod": "POST",
   "RequestURL": "$site_url",
-  "FileFormName": "file",
-  "ResponseType": "Text",
   "Headers": {
     "Token": "$token"
-  }
+  },
+  "Body": "MultipartFormData",
+  "FileFormName": "file",
+  "URL": "{response}"
 }
 EOT);
 }
@@ -1289,7 +1291,7 @@ if (isset($_FILES['file']['name']) &&
     is_uploaded_file($_FILES['file']['tmp_name']))
 {
     //file was uploaded, store it
-    $formatted = isset($_REQUEST['formatted']);
+    $formatted = isset($_SERVER['HTTP_TOKEN']) ? false : isset($_REQUEST['formatted']);
     store_file($_FILES['file']['name'],
               $_FILES['file']['tmp_name'],
               $formatted);
