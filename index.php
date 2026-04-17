@@ -13,30 +13,25 @@ ini_set('session.use_strict_mode', 1);
 
 session_start();
 
-$is_file_upload = $_SERVER['REQUEST_METHOD'] === 'POST';
+$requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$is_file_upload = $requestMethod === 'POST';
 
 $uri = $_ENV['MONGODB_URI'];
 $client = new Client($uri);
 $collection = $client->selectCollection($_ENV['DB_NAME'], $_ENV['COLLECTION_NAME']);
 $invitesCollection = $client->selectCollection($_ENV['DB_NAME'], 'invites');
 
-if (isset($_SERVER['HTTP_TOKEN'])) {
-    validateToken($collection);
-}
+$tokenUser = isset($_SERVER['HTTP_TOKEN']) ? validateToken($collection) : null;
 
 $usernameValue = isset($_POST['username']) ? htmlspecialchars($_POST['username'], ENT_QUOTES, 'UTF-8') : null;
 $passwordValue = $_POST['password'] ?? null;
 
 $inviteCodeValue = isset($_POST['invite_code']) ? htmlspecialchars($_POST['invite_code'], ENT_QUOTES, 'UTF-8') : null;
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($inviteCodeValue)) {
+if ($requestMethod === 'POST' && !empty($inviteCodeValue)) {
     $errorMessage = userRegister($usernameValue, $passwordValue, $inviteCodeValue, $invitesCollection, $collection);
 } else {
     $errorMessage = validateCredentials($usernameValue, $passwordValue, $collection);
-}
-
-if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
-    serveLoginPage($errorMessage, $usernameValue, $passwordValue);
 }
 
 function html_header() {
@@ -75,7 +70,7 @@ class CONFIG
     const ID_LENGTH = 3; //length of the random file ID
     const STORE_PATH = 'files/'; //directory to store uploaded files in
     const LOG_PATH = 'uploads.log'; //path to log uploads + resulting links to
-    const DOWNLOAD_PATH = '%s'; //the path part of the download url. %s = placeholder for filename
+    const DOWNLOAD_PATH = '?download=%s'; //the path part of the download url. %s = placeholder for filename
     const MAX_EXT_LEN = 7; //max. length for file extensions
     const EXTERNAL_HOOK = null; //external program to call for each upload
     const AUTO_FILE_EXT = false; //automatically try to detect file extension for files that have none
@@ -84,24 +79,37 @@ class CONFIG
 
     public static function SITE_URL() : string
     {
-        $proto = ($_SERVER['HTTPS'] ?? 'off') == 'on' ? 'https' : 'http';
-        return "$proto://{$_SERVER['HTTP_HOST']}{$_SERVER['REQUEST_URI']}";
+        $baseUrl = rtrim($_ENV['APP_BASE_URL'] ?? '', '/');
+        if ($baseUrl !== '') {
+            if (filter_var($baseUrl, FILTER_VALIDATE_URL) === false) {
+                throw new RuntimeException('APP_BASE_URL must be a valid absolute URL');
+            }
+
+            return $baseUrl;
+        }
+
+        $proto = ($_SERVER['HTTPS'] ?? 'off') === 'on' ? 'https' : 'http';
+        $serverName = $_SERVER['SERVER_NAME'] ?? 'localhost';
+        return "$proto://$serverName";
     }
 };
 
 function validateToken($collection) {
-    $token = htmlspecialchars($_SERVER['HTTP_TOKEN'] ?? '', ENT_QUOTES, 'UTF-8');
+    $token = trim($_SERVER['HTTP_TOKEN'] ?? '');
     $user = $collection->findOne(['token' => $token]);
 
     if ($user !== null) {
-        $_SESSION['authenticated'] = true;
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['token'] = $user['token'];
+        return $user;
     } else {
         header('HTTP/1.0 401 Unauthorized');
         echo 'Invalid token';
         exit;
     }
+}
+
+function isSessionAuthenticated() : bool
+{
+    return isset($_SESSION['authenticated']) && $_SESSION['authenticated'] === true;
 }
 
 function validateCredentials($usernameValue, $passwordValue, $collection) {
@@ -131,18 +139,26 @@ function validateCredentials($usernameValue, $passwordValue, $collection) {
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request']) && $_POST['request'] === 'generateInviteCode') {
-    if (isset($_SESSION['username'])) {
-        $username = $_SESSION['username'];
-        $inviteCode = generateInviteCode($username, $invitesCollection);
-        echo $inviteCode;
+if ($requestMethod === 'POST' && isset($_POST['request']) && $_POST['request'] === 'generateInviteCode') {
+    if (!isSessionAuthenticated()) {
+        header('HTTP/1.0 401 Unauthorized');
         exit;
     }
+
+    $currentUser = $collection->findOne(['username' => $_SESSION['username']]);
+    if ($currentUser === null || $currentUser['isAdmin'] !== true) {
+        header('HTTP/1.0 403 Forbidden');
+        exit;
+    }
+
+    $inviteCode = generateInviteCode($currentUser['username'], $invitesCollection);
+    echo $inviteCode;
+    exit;
 }
 
 if (isset($_GET['logout'])) {
     session_destroy();
-    header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?'));
+    header('Location: ' . CONFIG::SITE_URL());
     exit;
 }
 
@@ -241,6 +257,8 @@ function userCreate($usernameValue, $passwordValue, $isAdmin, $collection) {
 function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     html_header();
     $headerText = "login";
+    $safeUsernameValue = htmlspecialchars((string) ($usernameValue ?? ''), ENT_QUOTES, 'UTF-8');
+    $safeErrorMessage = htmlspecialchars((string) ($errorMessage ?? ''), ENT_QUOTES, 'UTF-8');
     echo <<<EOT
     <style>
         * {
@@ -390,12 +408,12 @@ function serveLoginPage($errorMessage, $usernameValue, $passwordValue) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
     <form method="post">
         <h2 id="formHeader">$headerText</h2>
-        <input type="text" id="username" name="username" value="$usernameValue" placeholder="username">
+        <input type="text" id="username" name="username" value="$safeUsernameValue" placeholder="username">
         <div class="password-container">
-            <input type="password" id="password" name="password" value="$passwordValue" placeholder="password">
+            <input type="password" id="password" name="password" placeholder="password">
             <i id="togglePassword" class="fas fa-eye eye-icon" onclick="togglePasswordVisibility()"></i>
         </div>
-        <div class="error">$errorMessage</div>
+        <div class="error">$safeErrorMessage</div>
         <input type="submit" value="login">
         <a href="#" id="toggleForm" onclick="toggleForms()" class="toggle-link">register</a>
     </form>
@@ -509,6 +527,11 @@ function sanitize_filename($name){
     return $sanitized;
 }
 
+function build_download_url(string $basename) : string
+{
+    return sprintf(CONFIG::SITE_URL() . CONFIG::DOWNLOAD_PATH, rawurlencode($basename));
+}
+
 function show_error_page($title, $message) {
     html_header();
     echo <<<EOT
@@ -613,7 +636,7 @@ EOT;
 // $name: original filename
 // $tmpfile: temporary path of uploaded file
 // $formatted: set to true to display formatted message instead of bare link
-function store_file(string $name, string $tmpfile, bool $formatted = false) : void
+function store_file(string $name, string $tmpfile, bool $formatted = false, ?string $uploadedBy = null) : void
 {
     if (strpos($name, '..') !== false || strpos($name, '/') !== false || strpos($name, '\\') !== false) {
         header('HTTP/1.0 400 Bad Request');
@@ -668,14 +691,15 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
         return;
     }
     
-    if (CONFIG::EXTERNAL_HOOK !== null)
+    if (is_string(CONFIG::EXTERNAL_HOOK))
     {
+        $externalHook = (string) CONFIG::EXTERNAL_HOOK;
         putenv('REMOTE_ADDR='.$_SERVER['REMOTE_ADDR']);
         putenv('ORIGINAL_NAME='.$name);
         putenv('STORED_FILE='.$target_file);
         $ret = -1;
         $out = null;
-        $last_line = exec(CONFIG::EXTERNAL_HOOK, $out, $ret);
+        $last_line = exec($externalHook, $out, $ret);
         if ($last_line !== false && $ret !== 0)
         {
             unlink($target_file);
@@ -686,7 +710,9 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
     }
 
     //print the download link of the file
-    $url = sprintf(CONFIG::SITE_URL().CONFIG::DOWNLOAD_PATH, $basename);
+    $url = build_download_url($basename);
+    $safeUrl = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+    $copyUrl = json_encode($url, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
 
     if ($formatted)
     {
@@ -834,11 +860,11 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
             <h2>file uploaded successfully</h2>
             
             <div class="url-box">
-                <a href="$url" class="url-link" target="_blank">$url</a>
+                <a href="$safeUrl" class="url-link">$safeUrl</a>
             </div>
             
             <div class="button-group">
-                <button class="btn btn-primary" onclick="copyToClipboard('$url')">copy link</button>
+                <button class="btn btn-primary" onclick='copyToClipboard($copyUrl)'>copy link</button>
                 <a href="/" class="btn btn-secondary">upload another</a>
             </div>
             
@@ -874,16 +900,15 @@ EOT;
     }
 
     // log uploader's IP, original filename, etc.
-    if (isset($_SESSION['username']) && CONFIG::LOG_PATH)
+    if ($uploadedBy !== null && CONFIG::LOG_PATH)
     {
-        $username = $_SESSION['username'];
         file_put_contents(
             CONFIG::LOG_PATH,
             implode("\t", array(
                 date('c'),
                 $_SERVER['REMOTE_ADDR'],
-                $username,
-                filesize($tmpfile),
+                $uploadedBy,
+                $size,
                 escapeshellarg($name),
                 $basename
             )) . "\n",
@@ -950,6 +975,43 @@ function send_text_file(string $filename, string $content) : void
     print($content);
 }
 
+function send_stored_file(string $basename) : void
+{
+    if (!preg_match('/^[A-Za-z0-9_.-]+$/', $basename)) {
+        header('HTTP/1.0 400 Bad Request');
+        echo 'Invalid file name';
+        exit;
+    }
+
+    $path = CONFIG::STORE_PATH . $basename;
+    if (!is_file($path)) {
+        header('HTTP/1.0 404 Not Found');
+        echo 'File not found';
+        exit;
+    }
+
+    header('Content-Type: application/octet-stream');
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Security-Policy: sandbox');
+    header('Content-Disposition: attachment; filename="' . addcslashes($basename, "\\\"") . '"');
+    header('Content-Length: ' . filesize($path));
+    readfile($path);
+    exit;
+}
+
+function config_download_name() : string
+{
+    $host = parse_url(CONFIG::SITE_URL(), PHP_URL_HOST) ?? 'filehost';
+    $sanitizedHost = preg_replace('/[^A-Za-z0-9.-]/', '-', $host) ?? '';
+    return $sanitizedHost !== '' ? $sanitizedHost : 'filehost';
+}
+
+function isUploadRequest() : bool
+{
+    return isset($_FILES['file']['name'], $_FILES['file']['tmp_name']) &&
+        is_uploaded_file($_FILES['file']['tmp_name']);
+}
+
 // send a ShareX custom uploader config as .json
 function send_sharex_config() : void
 {
@@ -967,8 +1029,8 @@ function send_sharex_config() : void
 
     $token = $_SESSION['token'];
 
-    $name = $_SERVER['SERVER_NAME'];
-    $site_url = str_replace("?sharex", "", CONFIG::SITE_URL());
+    $name = config_download_name();
+    $site_url = CONFIG::SITE_URL();
     send_text_file($name.'.sxcu', <<<EOT
 {
   "Version": "17.0.0",
@@ -989,8 +1051,8 @@ EOT);
 // send a Hupl uploader config as .hupl (which is just JSON)
 function send_hupl_config() : void
 {
-    $name = $_SERVER['SERVER_NAME'];
-    $site_url = str_replace("?hupl", "", CONFIG::SITE_URL());
+    $name = config_download_name();
+    $site_url = CONFIG::SITE_URL();
     send_text_file($name.'.hupl', <<<EOT
 {
   "name": "$name",
@@ -1592,23 +1654,16 @@ if (isset($newUsernameValue) && isset($newPasswordValue)) {
         }
         
         if (userCreate($newUsername, $newPassword, $isAdmin, $collection)) {
-            $redirectURL = str_replace('index.php', '', $_SERVER['REQUEST_URI']);
-            header("Location: " . $redirectURL);
+            header('Location: ' . CONFIG::SITE_URL());
             exit;
         }
     }
 }
 
 // decide what to do, based on POST parameters etc.
-if (isset($_FILES['file']['name']) &&
-    isset($_FILES['file']['tmp_name']) &&
-    is_uploaded_file($_FILES['file']['tmp_name']))
+if (isset($_GET['download']))
 {
-    //file was uploaded, store it
-    $formatted = isset($_SERVER['HTTP_TOKEN']) ? false : isset($_REQUEST['formatted']);
-    store_file($_FILES['file']['name'],
-              $_FILES['file']['tmp_name'],
-              $formatted);
+    send_stored_file((string) $_GET['download']);
 }
 else if (isset($_GET['sharex']))
 {
@@ -1618,12 +1673,30 @@ else if (isset($_GET['hupl']))
 {
     send_hupl_config();
 }
-else if ($argv[1] ?? null === 'purge')
+else if (($argv[1] ?? null) === 'purge')
 {
     purge_files();
 }
+else if (isUploadRequest())
+{
+    if (!isSessionAuthenticated() && $tokenUser === null) {
+        header('HTTP/1.0 401 Unauthorized');
+        exit;
+    }
+
+    $formatted = $tokenUser === null && isset($_POST['formatted']);
+    $uploadedBy = $tokenUser['username'] ?? ($_SESSION['username'] ?? null);
+    store_file($_FILES['file']['name'],
+               $_FILES['file']['tmp_name'],
+              $formatted,
+              $uploadedBy);
+}
 else
 {
+    if (!isSessionAuthenticated()) {
+        serveLoginPage($errorMessage, $usernameValue, $passwordValue);
+    }
+
     check_config();
     print_index();
 }

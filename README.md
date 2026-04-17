@@ -9,7 +9,7 @@ Minimalistic file host in a single PHP script.
 `curl`-able like any proper file host and pastebin ought to be.  
 i.e. you can upload a file via `curl -F "file=@/path/to/your/file.jpg" https://example.com/`
 
-Uploaded files get randomised names but keep their extensions. That means serving them is easily outsourced to the web server and is not handled by this script. 
+Uploaded files get randomised names but keep their extensions. The download links returned by the app use `?download=<filename>` and force an attachment download instead of opening the file inline.
 
 There's also a mechanism for removing files over a certain age, which can be invoked by calling the script with a command line argument.
 
@@ -28,6 +28,7 @@ Configure your .env:
 MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
 DB_NAME=single_php_filehost
 COLLECTION_NAME=users
+APP_BASE_URL=https://example.com
 ```
 
 # Config
@@ -52,16 +53,16 @@ The code responsible for the default info text can be found at the very bottom o
 
     RewriteEngine On
     RewriteCond "%{ENV:REDIRECT_STATUS}" "^$"
-    RewriteRule "^/?$" "index.php" [L,END]
-    RewriteRule "^(.+)$" "files/$1" [L,END]
+    RewriteRule "^/?$" "index.php" [L,END,QSA]
 </Directory>
 
 <Directory /path/to/webroot/files>
-    Options -ExecCGI
-    php_flag engine off
-    SetHandler None
-    AddType text/plain .php .php5 .html .htm .cpp .c .h .sh
+    Require all denied
 </Directory>
+
+<FilesMatch "^(\.env|uploads\.log)$">
+    Require all denied
+</FilesMatch>
 ```
 
 ## Nginx
@@ -69,8 +70,16 @@ The code responsible for the default info text can be found at the very bottom o
 root /path/to/webroot;
 index index.php;
 
-location ~ /(.+)$ {
-    root /path/to/webroot/files;
+location ^~ /files/ {
+    return 404;
+}
+
+location = /.env {
+    return 404;
+}
+
+location = /uploads.log {
+    return 404;
 }
 
 location = / {
